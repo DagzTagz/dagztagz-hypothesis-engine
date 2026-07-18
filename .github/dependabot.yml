@@ -1,0 +1,40 @@
+# Dependabot: keep Python deps and GitHub Actions up to date.
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# pip watches manifests such as:
+#   requirements.txt, requirements/*.txt, pyproject.toml, Pipfile, setup.py
+# Once those exist on main, Dependabot can open version-update PRs.
+
+version: 2
+updates:
+  # Python / pip ecosystem
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Ignore major bumps by default later if needed, e.g.:
+    # ignore:
+    #   - dependency-name: "some-package"
+    #     update-types: ["version-update:semver-major"]
+
+  # GitHub Actions used in workflows under .github/workflows/
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
