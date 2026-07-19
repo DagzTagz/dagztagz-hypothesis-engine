@@ -21,6 +21,12 @@ from hypothesis_engine.models import (
 )
 
 
+def estimate_api_calls(n_hypotheses: int) -> int:
+    """Rough live-mode call count: background + generate + verify×N + tests×N."""
+    n = max(1, min(5, int(n_hypotheses)))
+    return 2 + 2 * n
+
+
 def run_workflow(
     topic: str,
     *,

@@ -80,6 +80,7 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 - **Not malware, but not magic:** this repo is ordinary open-source Python. Clone and `pip install` do **not** by themselves call xAI. Live mode **does** use the network when **you** run it without `--dry-run`.
 - **Your API key is your secret:** put it in a local `.env` (see `.env.example`). **Never commit** `.env` or paste keys into issues, PRs, or the topic string.
 - **Live mode leaves your machine:** topic text and prompts are sent to **xAI** under **your** account/terms (including xAI’s terms and Acceptable Use Policy). Do not put passwords, private data, or keys in the topic.
+- **Local audit logs are a privacy choice you control:** optional `--audit-log` files stay local; default topic storage is a one-way hash. That does **not** stop live topics from going to xAI. See [audit log](#optional-local-audit-log-privacy-is-your-local-choice).
 - **Not established science:** outputs are experimental research aids. Always verify with experts and real methods.
 - **Not an official xAI product:** **DagzTagz Hypothesis Engine** is a community project. **Powered by Grok (xAI)** means we call the public Grok API — it does **not** mean endorsement, partnership, or sponsorship by xAI. See [Disclaimer](#disclaimer) and [SECURITY.md](SECURITY.md).
 
@@ -94,6 +95,7 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 > - **You** pay for tokens / credits on **your** xAI account ([console.x.ai](https://console.x.ai) / xAI pricing).
 > - This project does **not** pay for your usage and cannot cap your bill for you.
 > - Phase 1 makes **multiple** model calls per run (background + generate + verify each hypothesis + tests). Costs scale with `-n` / `--num-hypotheses` and topic length.
+> - The CLI may show an **estimated API call count** — that is **not a dollar price quote**. Your bill depends on **tokens used** and **xAI’s current pricing**.
 > - Repeating live runs, automation, or large `-n` values can **add up quickly**.
 > - **Dry-run costs $0.** Use it until you deliberately accept live charges.
 >
@@ -113,6 +115,44 @@ hypothesis-engine "effects of microplastics on soil microbiomes" -n 2
 ```
 
 Live runs are **powered by Grok (xAI)**. Output is attributed accordingly; still not an official xAI product.
+
+### Optional local audit log (privacy is **your** local choice)
+
+Full step-by-step: **[getting-started.md — Optional local audit log](getting-started.md#optional-local-audit-log-privacy-choices)**.
+
+**This is a local policy choice for serious privacy considerations — not a compliance certification.**
+
+It is still a **real privacy enhancement at the local layer**: it reduces how often sensitive topic text ends up in cleartext files that are easy to overshare (tickets, git, screenshots, shared machines), supports **developer least-privilege logging**, and raises the bar against **casual or opportunistic** local exposure. It does **not** replace OS disk encryption, account lock, or the fact that **live** mode still sends topics to xAI.
+
+| Point | Meaning |
+|-------|---------|
+| Optional | No `--audit-log` → no audit file |
+| Local only | File stays on **your** machine unless **you** share it |
+| Not a cloud DLP product | Does not replace legal/compliance programs (HIPAA, etc.) |
+| Does not hide topics from xAI | **Live** mode still sends the full topic to xAI for generation |
+| Default topic protection | One-way `topic_sha256` hash only (no plaintext topic in the log) |
+| Optional encryption | `AUDIT_LOG_KEY` + `pip install -e '.[audit]'` → `topic_encrypted` |
+| Fail closed | If `AUDIT_LOG_KEY` is set without `[audit]` installed → **error + install instructions** |
+| Plaintext opt-in | `--audit-include-topic` (least private) |
+| API keys | **Never** written to the audit log |
+| Why bother without a cert? | Limits blast radius of leaked logs, shared PCs, bad git adds, and debug paste; keeps audit **metadata** without a second plaintext prompt archive — see [getting-started](getting-started.md#why-local-hash--encrypt-still-matters-even-without-a-certification) |
+
+Quick examples:
+
+```bash
+# A) Hash-only (default privacy, no extra packages)
+hypothesis-engine --dry-run "my topic" --audit-log audit.jsonl
+
+# B) Encryption (one-time install + secret in .env)
+pip install -e ".[audit]"
+# add AUDIT_LOG_KEY=... to .env  (never commit .env)
+hypothesis-engine --dry-run "my topic" --audit-log audit.jsonl
+
+# C) Explicit plaintext in the log (avoid for sensitive topics)
+hypothesis-engine --dry-run "my topic" --audit-log audit.jsonl --audit-include-topic
+```
+
+`audit.jsonl` / `*.jsonl` are gitignored — still do not force-add or publish them.
 
 ### Option 2: Using Grok Build (for faster development)
 
@@ -178,6 +218,16 @@ Even if you just want to follow along or ask questions, feel free to open an iss
 - Domain-specific modes (Physics, Biology, Materials Science, etc.)
 - Integration with real scientific tools and simulators
 - Community-curated knowledge base
+
+---
+
+## Export controls, sanctions, and cryptography
+
+- **Public open source:** This software is provided as publicly available open source (Apache-2.0). Use of the **xAI API** is subject to [xAI’s terms](https://x.ai/legal/terms-of-service) and applicable **US export and sanctions laws**. **You** are responsible for lawful use in your jurisdiction.
+- **No circumvention:** Do **not** use this project to evade sanctions, export controls, or other applicable law.
+- **Crypto purpose:** Optional audit-log encryption protects **local** log files using **standard published algorithms** (via optional dependency `cryptography` / Fernet). It is **not** a government-certified cryptographic module and is **not** marketed as a tool for covert communications or law-enforcement evasion.
+
+See also [SECURITY.md](SECURITY.md) and local audit privacy notes in [getting-started.md](getting-started.md#optional-local-audit-log-privacy-choices).
 
 ---
 

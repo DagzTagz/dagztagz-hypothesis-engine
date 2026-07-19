@@ -147,6 +147,16 @@ Public issues remain the right place for non-security bugs and feature requests.
 
 ---
 
+## Export controls, sanctions, and cryptography
+
+- **Public open source:** This software is provided as publicly available open source (Apache-2.0 on this repository). Use of the **xAI API** (live mode) is subject to [xAI’s terms](https://x.ai/legal/terms-of-service) and applicable **US export and sanctions laws**. **You** are responsible for lawful use in your jurisdiction.
+- **No circumvention:** Do **not** use this project to evade sanctions, export controls, or other applicable law.
+- **Crypto purpose:** Optional audit-log topic encryption protects **local** audit files using **standard published algorithms** (optional extra: `pip install 'dagztagz-hypothesis-engine[audit]'`, Fernet via the `cryptography` package). It is **not** a government-certified cryptographic module. Default audit logging stores a one-way topic hash only; encryption is opt-in and fails closed if a key is configured without the extra installed. This feature is **not** intended or documented as a means of covert communication or of evading lawful process.
+
+Local audit privacy choices are described in [getting-started.md](getting-started.md#optional-local-audit-log-privacy-choices). They are **local defense-in-depth**, not a compliance certification.
+
+---
+
 ## Questions
 
 For non-sensitive questions about this policy, open a normal GitHub issue.  

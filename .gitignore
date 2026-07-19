@@ -62,6 +62,8 @@ build/
 uv.lock
 out.json
 *.jsonl
+audit.jsonl
+live-out.json
 
 # Node / JS
 node_modules/
