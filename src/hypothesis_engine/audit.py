@@ -42,6 +42,16 @@ def decrypt_topic(token: str, secret: str) -> str:
     return _load_crypto().decrypt_topic(token, secret)
 
 
+def _load_dotenv_if_present() -> None:
+    """Load project ``.env`` into the process env (does not override existing vars)."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()  # finds .env in cwd / parents; no-op if missing
+    except Exception:  # noqa: BLE001 — optional convenience only
+        pass
+
+
 def topic_audit_fields(
     topic: str,
     *,
@@ -64,6 +74,9 @@ def topic_audit_fields(
     if encryption_secret is not None:
         secret = encryption_secret.strip()
     else:
+        # XAI_API_KEY is loaded via pydantic Settings; AUDIT_LOG_KEY is read here.
+        # Load .env so a key written only in .env is visible without export.
+        _load_dotenv_if_present()
         secret = os.environ.get("AUDIT_LOG_KEY", "").strip()
 
     if secret:

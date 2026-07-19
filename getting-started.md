@@ -151,7 +151,7 @@ pip install -e ".[audit]"
 nano .env
 ```
 
-Add a long random passphrase, for example:
+Add a long random passphrase **on its own line**, for example:
 
 ```text
 AUDIT_LOG_KEY=replace-with-a-long-random-passphrase
@@ -159,14 +159,21 @@ AUDIT_LOG_KEY=replace-with-a-long-random-passphrase
 
 Save and exit (`Ctrl+O`, Enter, `Ctrl+X` in nano).
 
-**Step 3 — run with audit log:**
+The CLI loads `.env` automatically for `AUDIT_LOG_KEY` (same idea as other env settings).  
+If the key is missing or blank, the log stays **hash-only** (what you saw if encryption did not engage).
+
+**Step 3 — run with audit log** (from the project directory, venv on):
 
 ```bash
-hypothesis-engine --dry-run "my topic" --audit-log audit.jsonl
+# optional: start a fresh log file for a clean test
+rm -f audit.jsonl
+
+hypothesis-engine --dry-run "my topic" -n 1 --audit-log audit.jsonl
+cat audit.jsonl
 ```
 
-What you get: `topic_sha256` **and** `topic_encrypted` (Fernet).  
-Without `AUDIT_LOG_KEY`, you cannot read the topic from the file.
+**Success looks like:** `"topic_storage": "encrypted"` and a `"topic_encrypted": "gAAAA..."` field.  
+**Hash-only** (`"topic_storage": "hash_only"`) means `AUDIT_LOG_KEY` was not set/loaded — fix `.env` and re-run.
 
 **Fail closed:** if `AUDIT_LOG_KEY` is set but `[audit]` is **not** installed, the CLI **exits with install instructions**. It will **not** silently write hash-only while you thought encryption was on.
 

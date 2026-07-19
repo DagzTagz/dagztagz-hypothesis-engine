@@ -99,3 +99,22 @@ def test_cli_audit_log_has_no_plaintext_by_default(tmp_path: Path, monkeypatch):
         assert "topic" not in row
         assert row.get("topic_sha256")
         assert "private topic xyz" not in line
+
+
+def test_cli_loads_audit_key_from_dotenv_file(tmp_path: Path, monkeypatch):
+    """AUDIT_LOG_KEY in a local .env should enable encryption without export."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AUDIT_LOG_KEY", raising=False)
+    (tmp_path / ".env").write_text(
+        "AUDIT_LOG_KEY=dotenv-passphrase-for-unit-test\n",
+        encoding="utf-8",
+    )
+    log = tmp_path / "a.jsonl"
+    code = main(
+        ["--dry-run", "--json-only", "-n", "1", "--audit-log", str(log), "dotenv topic"]
+    )
+    assert code == 0
+    start = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
+    assert start["topic_storage"] == "encrypted"
+    assert "topic_encrypted" in start
+    assert "dotenv topic" not in log.read_text(encoding="utf-8")
