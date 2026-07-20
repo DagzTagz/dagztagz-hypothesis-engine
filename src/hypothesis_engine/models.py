@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class Confidence(str, Enum):
+class Confidence(StrEnum):
     """Coarse confidence labels — not calibrated probabilities."""
 
     LOW = "low"
@@ -16,7 +16,7 @@ class Confidence(str, Enum):
     HIGH = "high"
 
 
-class Verdict(str, Enum):
+class Verdict(StrEnum):
     """Adversarial verification outcome for a single hypothesis."""
 
     PLAUSIBLE = "plausible"

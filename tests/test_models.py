@@ -6,8 +6,8 @@ from hypothesis_engine.models import (
     Hypothesis,
     HypothesisBundle,
     SuggestedTest,
-    VerificationResult,
     Verdict,
+    VerificationResult,
 )
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
 
 from openai import OpenAI
 
@@ -17,8 +16,8 @@ from hypothesis_engine.models import (
     Hypothesis,
     HypothesisBundle,
     SuggestedTest,
-    VerificationResult,
     Verdict,
+    VerificationResult,
 )
 
 

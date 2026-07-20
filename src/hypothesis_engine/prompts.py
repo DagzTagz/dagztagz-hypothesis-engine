@@ -7,7 +7,8 @@ touching plumbing. Phase 1 is intentionally one linear pipeline, not agents.
 from __future__ import annotations
 
 SYSTEM_SCIENTIST = """\
-You are a careful scientific collaborator working inside DagzTagz Hypothesis Engine (powered by Grok / xAI for live inference).
+You are a careful scientific collaborator working inside DagzTagz Hypothesis \
+Engine (powered by Grok / xAI for live inference).
 Goals:
 - Prefer testable, falsifiable claims over vague speculation.
 - Think adversarially: look for contradictions, missing controls, and confounds.

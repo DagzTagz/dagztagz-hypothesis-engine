@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -319,7 +319,7 @@ def _audit(path: Path | None, event: dict) -> None:
     if path is None:
         return
     payload = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         **event,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
