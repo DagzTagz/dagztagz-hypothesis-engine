@@ -43,11 +43,23 @@ def decrypt_topic(token: str, secret: str) -> str:
 
 
 def _load_dotenv_if_present() -> None:
-    """Load project ``.env`` into the process env (does not override existing vars)."""
+    """Load ``.env`` into the process env (does not override existing vars).
+
+    Prefer ``Path.cwd() / ".env"`` so CLI and tests that chdir into a project
+    directory load the intended file. python-dotenv's bare ``load_dotenv()``
+    walks from the calling *module* path, which after ``pip install`` is under
+    site-packages and will not see a temporary test ``.env``.
+    """
     try:
+        from pathlib import Path
+
         from dotenv import load_dotenv
 
-        load_dotenv()  # finds .env in cwd / parents; no-op if missing
+        cwd_env = Path.cwd() / ".env"
+        if cwd_env.is_file():
+            load_dotenv(cwd_env)
+        else:
+            load_dotenv()  # optional walk for unusual layouts
     except Exception:  # noqa: BLE001 — optional convenience only
         pass
 
