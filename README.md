@@ -7,7 +7,7 @@ The goal of this project is to create a transparent, auditable AI tool that help
 
 This project is inspired by xAI’s mission to advance our understanding of the universe through maximally truth-seeking AI. Live model calls use the **xAI Grok API** under **your** account and terms.
 
-> **Current Status**: Early development (Phase 1). We are building a simple, working MVP.
+> **Current Status**: **Phase 2** (in progress). Phase 1 MVP is **complete and shipping**. We are starting thin Phase 2 improvements (stronger verification, retrieval, and experiment design—not a full multi-agent system yet).
 
 ---
 
@@ -24,14 +24,27 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 
 ---
 
-## Current Features (Phase 1 - MVP)
+## What ships today (Phase 1 MVP — complete)
 
 - Basic hypothesis generation from a topic or short description
 - Structured output (hypothesis + verification + suggested tests)
 - Simple verification step that checks for obvious contradictions
+- Dry-run mode, live Grok API path, CI (pytest + ruff), optional local audit logging
 - Designed to be easy to run and understand
 
-**Note**: This is still very early. The system is currently a single, well-prompted workflow rather than a full multi-agent system.
+**Note:** The runnable app is still a **single, well-prompted workflow** (not multi-agent). Phase 2 work builds on this foundation.
+
+---
+
+## Phase 2 focus (current)
+
+Work in progress / next thin slices (not all landed yet):
+
+- Stronger verification (multiple checks / clearer adversarial passes)
+- Literature-style retrieval (RAG) when ready
+- Richer experiment-suggestion capabilities
+
+Track detail in [Roadmap](#roadmap).
 
 ---
 
@@ -230,15 +243,17 @@ Even if you just want to follow along or ask questions, feel free to open an iss
 
 ## Roadmap
 
-### Phase 1 (Current)
+### Phase 1 — complete
 - Simple working MVP (single workflow)
 - Basic hypothesis generation + verification
 - Clear structured output
+- Safety/docs foundation, CI (pytest + ruff), optional audit log
 
-### Phase 2
-- Add literature retrieval (RAG)
+### Phase 2 — current
 - Improve verification with multiple checks
-- Add experiment suggestion capabilities
+- Add literature retrieval (RAG)
+- Expand experiment-suggestion capabilities
+- Thin, reviewable slices preferred over big-bang rewrites
 
 ### Phase 3
 - Multi-agent architecture (Generator + Verifier + Experiment Designer)
