@@ -64,14 +64,28 @@ Background brief (JSON):
 Hypothesis to verify (JSON):
 {hypothesis_json}
 
-Act as a peer adversary. Check scientific consistency, testability, and obvious
-contradictions with well-established knowledge (without inventing fake papers).
+Act as a peer adversary. Run ALL of the following checks (multi-check verification),
+then give an overall verdict. Do NOT invent fake papers or live literature search.
+
+Required checks — return exactly one object per id (use these ids only):
+1. consistency — internal logic; does the claim cohere with its assumptions?
+2. testability — is it falsifiable with a realistic observation/experiment/analysis?
+3. confounds — what alternative explanations or controls are missing?
+4. prior_knowledge — obvious conflict or support from well-established science
+   (model knowledge only; no fabricated citations)
+
+For each check, status must be one of: "pass" | "warn" | "fail" | "unclear"
+(use "unclear" when evidence is thin rather than guessing).
 
 Return ONLY JSON with keys:
 - hypothesis_id (string)
 - verdict: one of "plausible" | "needs_revision" | "contradicted" | "not_testable"
+  (derive from the checks; e.g. fail on testability → often "not_testable";
+   fail on consistency/prior_knowledge → often "contradicted" or "needs_revision")
 - confidence: one of "low" | "medium" | "high"
-- consistency_notes (string)
+- consistency_notes (string; short overall narrative)
+- checks: array of exactly 4 objects, each with:
+  {{id (one of the four above), status, summary (one sentence)}}
 - critiques: array of {{claim, severity (low|medium|high), evidence_or_reasoning}}
 - contradictions: array of strings
 - revision_suggestions: array of strings

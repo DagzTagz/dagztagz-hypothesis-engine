@@ -21,8 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hypothesis-engine",
         description=(
-            "DagzTagz Hypothesis Engine — generate, adversarially verify, "
-            "and suggest tests for scientific hypotheses (Phase 1). "
+            "DagzTagz Hypothesis Engine — generate, multi-check adversarially verify, "
+            "and suggest tests for scientific hypotheses. "
             "Powered by Grok (xAI) in live mode."
         ),
     )
@@ -206,7 +206,7 @@ def _confirm_live(
             f"Topic: [bold]{topic}[/bold]\n"
             f"Hypotheses: [bold]{n}[/bold]\n"
             f"Estimated xAI API calls: [bold]~{estimated}[/bold] "
-            f"(background + generate + verify×{n} + tests×{n})\n\n"
+            f"(background + generate + multi-check verify×{n} + tests×{n})\n\n"
             "[bold]Not a price quote.[/bold] Your bill depends on "
             "[bold]tokens used[/bold] and [bold]xAI’s current pricing[/bold] "
             "(see [link=https://console.x.ai]console.x.ai[/link] / xAI docs).\n"
@@ -331,10 +331,15 @@ def _print_human(console: Console, bundle: object) -> None:
     from hypothesis_engine.models import HypothesisBundle
 
     assert isinstance(bundle, HypothesisBundle)
+    phase = bundle.meta.get("phase", 1)
+    ver_schema = bundle.meta.get("verification", "")
+    title = f"DagzTagz Hypothesis Engine (Phase {phase})"
+    if ver_schema:
+        title += f" · {ver_schema}"
     console.print(
         Panel.fit(
             f"[bold]{bundle.topic}[/bold]\n[dim]{bundle.overall_notes}[/dim]",
-            title="DagzTagz Hypothesis Engine (Phase 1)",
+            title=title,
         )
     )
     console.print("\n[bold]Background[/bold]")
@@ -353,6 +358,27 @@ def _print_human(console: Console, bundle: object) -> None:
                 f"  [bold]Verdict:[/bold] {ver.verdict.value} "
                 f"({ver.confidence.value}) — {ver.consistency_notes}"
             )
+            if ver.checks:
+                check_table = Table(
+                    title=f"Multi-check for {hyp.id}",
+                    show_header=True,
+                    show_lines=False,
+                )
+                check_table.add_column("Check", style="bold")
+                check_table.add_column("Status")
+                check_table.add_column("Summary")
+                for c in ver.checks:
+                    status = c.status.value
+                    if status == "pass":
+                        status_disp = f"[green]{status}[/green]"
+                    elif status == "fail":
+                        status_disp = f"[red]{status}[/red]"
+                    elif status == "warn":
+                        status_disp = f"[yellow]{status}[/yellow]"
+                    else:
+                        status_disp = f"[dim]{status}[/dim]"
+                    check_table.add_row(c.id, status_disp, c.summary)
+                console.print(check_table)
         tests = [t for t in bundle.tests if t.hypothesis_id == hyp.id]
         if tests:
             table = Table(title=f"Tests for {hyp.id}", show_lines=False)

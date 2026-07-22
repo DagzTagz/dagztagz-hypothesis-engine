@@ -7,7 +7,7 @@ The goal of this project is to create a transparent, auditable AI tool that help
 
 This project is inspired by xAI’s mission to advance our understanding of the universe through maximally truth-seeking AI. Live model calls use the **xAI Grok API** under **your** account and terms.
 
-> **Current Status**: **Phase 2** (in progress). Phase 1 MVP is **complete and shipping**. We are starting thin Phase 2 improvements (stronger verification, retrieval, and experiment design—not a full multi-agent system yet).
+> **Current Status**: **Phase 2** (in progress). Phase 1 MVP is **complete and shipping**. First Phase 2 slice: **multi-check verification** (`multi_check_v1` — consistency, testability, confounds, prior_knowledge in one verify call). Next thin slices: retrieval (RAG) and richer experiments—not a full multi-agent system yet.
 
 ---
 
@@ -24,25 +24,28 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 
 ---
 
-## What ships today (Phase 1 MVP — complete)
+## What ships today
 
+### Phase 1 MVP — complete
 - Basic hypothesis generation from a topic or short description
 - Structured output (hypothesis + verification + suggested tests)
-- Simple verification step that checks for obvious contradictions
 - Dry-run mode, live Grok API path, CI (pytest + ruff), optional local audit logging
-- Designed to be easy to run and understand
 
-**Note:** The runnable app is still a **single, well-prompted workflow** (not multi-agent). Phase 2 work builds on this foundation.
+### Phase 2 — shipping now
+- **Multi-check verification** (`meta.verification = multi_check_v1`): each hypothesis is scored on **consistency**, **testability**, **confounds**, and **prior_knowledge** (plus overall verdict). Still **one API call** per hypothesis for verify—richer JSON, not extra cost from extra round-trips.
+- Human CLI table and JSON `verifications[].checks[]` for the four dimensions
+
+**Note:** The runnable app is still a **single, well-prompted workflow** (not multi-agent). Phase 2 continues in thin slices.
 
 ---
 
 ## Phase 2 focus (current)
 
-Work in progress / next thin slices (not all landed yet):
+Landed / next:
 
-- Stronger verification (multiple checks / clearer adversarial passes)
-- Literature-style retrieval (RAG) when ready
-- Richer experiment-suggestion capabilities
+- [x] Stronger verification (multi-check `multi_check_v1`)
+- [ ] Literature-style retrieval (RAG) when ready
+- [ ] Richer experiment-suggestion capabilities
 
 Track detail in [Roadmap](#roadmap).
 
@@ -250,7 +253,7 @@ Even if you just want to follow along or ask questions, feel free to open an iss
 - Safety/docs foundation, CI (pytest + ruff), optional audit log
 
 ### Phase 2 — current
-- Improve verification with multiple checks
+- Multi-check verification (`multi_check_v1`) — shipping
 - Add literature retrieval (RAG)
 - Expand experiment-suggestion capabilities
 - Thin, reviewable slices preferred over big-bang rewrites

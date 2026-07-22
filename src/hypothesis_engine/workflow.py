@@ -1,4 +1,4 @@
-"""Phase 1 single workflow: background → generate → verify → suggest tests."""
+"""Single workflow: background → generate → multi-check verify → suggest tests."""
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ from hypothesis_engine import prompts
 from hypothesis_engine.config import Settings, get_settings
 from hypothesis_engine.llm import build_client, chat_json
 from hypothesis_engine.models import (
+    REQUIRED_CHECK_IDS,
     BackgroundBrief,
+    CheckResult,
+    CheckStatus,
     Confidence,
     Hypothesis,
     HypothesisBundle,
@@ -20,9 +23,16 @@ from hypothesis_engine.models import (
     VerificationResult,
 )
 
+# Bumped when verification schema gains multi-check dimensions (still one API call).
+VERIFICATION_SCHEMA = "multi_check_v1"
+
 
 def estimate_api_calls(n_hypotheses: int) -> int:
-    """Rough live-mode call count: background + generate + verify×N + tests×N."""
+    """Rough live-mode call count: background + generate + verify×N + tests×N.
+
+    Multi-check verification still uses one verify call per hypothesis (richer
+    JSON, not extra round-trips).
+    """
     n = max(1, min(5, int(n_hypotheses)))
     return 2 + 2 * n
 
@@ -36,7 +46,7 @@ def run_workflow(
     dry_run: bool = False,
     on_progress: Callable[[str], None] | None = None,
 ) -> HypothesisBundle:
-    """Run the full Phase 1 pipeline for a topic.
+    """Run the full pipeline for a topic (background → generate → verify → tests).
 
     Parameters
     ----------
@@ -86,10 +96,11 @@ def run_workflow(
     verifications: list[VerificationResult] = []
     tests: list[SuggestedTest] = []
     for hyp in hypotheses:
-        _tick(f"Adversarially verifying {hyp.id}…")
+        _tick(f"Multi-check verifying {hyp.id} (one API call)…")
         ver = _step_verify(client, model, topic, background, hyp)
         verifications.append(ver)
-        _progress(f"{hyp.id} verification done ({ver.verdict.value}).")
+        check_bits = ", ".join(f"{c.id}={c.status.value}" for c in ver.checks)
+        _progress(f"{hyp.id} verification done ({ver.verdict.value}; {check_bits}).")
 
         _tick(f"Suggesting tests for {hyp.id}…")
         tests.extend(_step_tests(client, model, topic, hyp, ver))
@@ -105,10 +116,11 @@ def run_workflow(
         tests=tests,
         overall_notes=overall,
         meta={
-            "phase": 1,
+            "phase": 2,
             "model": model,
             "n_hypotheses": n_hypotheses,
             "background_mode": "model_knowledge_only",
+            "verification": VERIFICATION_SCHEMA,
         },
     )
 
@@ -177,7 +189,96 @@ def _step_verify(
     )
     if "hypothesis_id" not in data:
         data["hypothesis_id"] = hyp.id
+    data["checks"] = [
+        c.model_dump(mode="json") for c in _normalize_checks(data.get("checks"))
+    ]
     return VerificationResult.model_validate(data)
+
+
+def _normalize_checks(raw: object) -> list[CheckResult]:
+    """Ensure the four fixed multi-check slots are present and ordered.
+
+    Unknown ids from the model are dropped; missing required ids become unclear.
+    """
+    by_id: dict[str, CheckResult] = {}
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            cid = str(item.get("id", "")).strip().lower().replace(" ", "_").replace("-", "_")
+            if cid not in REQUIRED_CHECK_IDS or cid in by_id:
+                continue
+            try:
+                by_id[cid] = CheckResult.model_validate({**item, "id": cid})
+            except Exception:  # noqa: BLE001 — bad model row → placeholder
+                by_id[cid] = CheckResult(
+                    id=cid,
+                    status=CheckStatus.UNCLEAR,
+                    summary="Model returned an invalid check object for this id.",
+                )
+
+    ordered: list[CheckResult] = []
+    for cid in REQUIRED_CHECK_IDS:
+        if cid in by_id:
+            ordered.append(by_id[cid])
+        else:
+            ordered.append(
+                CheckResult(
+                    id=cid,
+                    status=CheckStatus.UNCLEAR,
+                    summary="Model omitted this check; treat as not assessed.",
+                )
+            )
+    return ordered
+
+
+def _mock_checks(*, plausible: bool) -> list[CheckResult]:
+    """Deterministic multi-check rows for dry-run."""
+    if plausible:
+        return [
+            CheckResult(
+                id="consistency",
+                status=CheckStatus.PASS,
+                summary="Mock: statement coheres with its listed assumptions.",
+            ),
+            CheckResult(
+                id="testability",
+                status=CheckStatus.PASS,
+                summary="Mock: claim is framed as measurable and falsifiable.",
+            ),
+            CheckResult(
+                id="confounds",
+                status=CheckStatus.WARN,
+                summary="Mock: alternative explanations not fully ruled out.",
+            ),
+            CheckResult(
+                id="prior_knowledge",
+                status=CheckStatus.PASS,
+                summary="Mock: no obvious conflict with well-established knowledge.",
+            ),
+        ]
+    return [
+        CheckResult(
+            id="consistency",
+            status=CheckStatus.WARN,
+            summary="Mock: some tension between claim and assumptions.",
+        ),
+        CheckResult(
+            id="testability",
+            status=CheckStatus.PASS,
+            summary="Mock: still testable in principle.",
+        ),
+        CheckResult(
+            id="confounds",
+            status=CheckStatus.FAIL,
+            summary="Mock: major confounds missing; needs clearer controls.",
+        ),
+        CheckResult(
+            id="prior_knowledge",
+            status=CheckStatus.WARN,
+            summary="Mock: partial tension with established patterns (synthetic).",
+        ),
+    ]
 
 
 def _step_tests(
@@ -222,7 +323,8 @@ def _overall_notes(
             continue
         parts.append(f"{h.id}: verdict={v.verdict.value}, confidence={v.confidence.value}")
     return (
-        "Phase 1 run complete. Treat outputs as research aids, not established science. "
+        "Run complete (multi-check verification). "
+        "Treat outputs as research aids, not established science. "
         + " | ".join(parts)
     )
 
@@ -244,6 +346,7 @@ def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
     tests: list[SuggestedTest] = []
     for i in range(1, n + 1):
         hid = f"H{i}"
+        plausible = i % 2 == 1
         hypotheses.append(
             Hypothesis(
                 id=hid,
@@ -256,9 +359,10 @@ def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
         verifications.append(
             VerificationResult(
                 hypothesis_id=hid,
-                verdict=Verdict.PLAUSIBLE if i % 2 else Verdict.NEEDS_REVISION,
+                verdict=Verdict.PLAUSIBLE if plausible else Verdict.NEEDS_REVISION,
                 confidence=Confidence.LOW,
-                consistency_notes="Dry-run verification placeholder.",
+                consistency_notes="Dry-run multi-check verification placeholder.",
+                checks=_mock_checks(plausible=plausible),
                 critiques=[],
                 contradictions=[],
                 revision_suggestions=["Replace with live run for real critique"],
@@ -282,7 +386,12 @@ def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
         verifications=verifications,
         tests=tests,
         overall_notes="Dry-run mock output; no API calls were made.",
-        meta={"phase": 1, "dry_run": True, "n_hypotheses": n},
+        meta={
+            "phase": 2,
+            "dry_run": True,
+            "n_hypotheses": n,
+            "verification": VERIFICATION_SCHEMA,
+        },
     )
 
 

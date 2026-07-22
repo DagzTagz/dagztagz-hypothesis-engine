@@ -1,4 +1,4 @@
-"""Structured data models for the Phase 1 hypothesis workflow."""
+"""Structured data models for the hypothesis workflow."""
 
 from __future__ import annotations
 
@@ -6,6 +6,14 @@ from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+# Fixed multi-check ids (Phase 2 verification). One API call still returns all.
+REQUIRED_CHECK_IDS: tuple[str, ...] = (
+    "consistency",
+    "testability",
+    "confounds",
+    "prior_knowledge",
+)
 
 
 class Confidence(StrEnum):
@@ -23,6 +31,15 @@ class Verdict(StrEnum):
     NEEDS_REVISION = "needs_revision"
     CONTRADICTED = "contradicted"
     NOT_TESTABLE = "not_testable"
+
+
+class CheckStatus(StrEnum):
+    """Per-check outcome within multi-check verification."""
+
+    PASS = "pass"
+    WARN = "warn"
+    FAIL = "fail"
+    UNCLEAR = "unclear"
 
 
 class BackgroundBrief(BaseModel):
@@ -56,13 +73,30 @@ class CritiquePoint(BaseModel):
     evidence_or_reasoning: str
 
 
+class CheckResult(BaseModel):
+    """One dimension of multi-check adversarial verification."""
+
+    id: str = Field(
+        description="Check id: consistency | testability | confounds | prior_knowledge"
+    )
+    status: CheckStatus = CheckStatus.UNCLEAR
+    summary: str = Field(description="One-sentence finding for this check")
+
+
 class VerificationResult(BaseModel):
-    """Adversarial check of one hypothesis."""
+    """Adversarial check of one hypothesis (overall + per-check dimensions)."""
 
     hypothesis_id: str
     verdict: Verdict
     confidence: Confidence = Confidence.MEDIUM
     consistency_notes: str
+    checks: list[CheckResult] = Field(
+        default_factory=list,
+        description=(
+            "Fixed multi-check results "
+            "(consistency, testability, confounds, prior_knowledge)"
+        ),
+    )
     critiques: list[CritiquePoint] = Field(default_factory=list)
     contradictions: list[str] = Field(default_factory=list)
     revision_suggestions: list[str] = Field(default_factory=list)
@@ -81,7 +115,7 @@ class SuggestedTest(BaseModel):
 
 
 class HypothesisBundle(BaseModel):
-    """Full structured output for one run of the Phase 1 workflow."""
+    """Full structured output for one run of the workflow."""
 
     topic: str
     background: BackgroundBrief
