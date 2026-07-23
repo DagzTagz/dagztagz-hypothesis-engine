@@ -23,15 +23,16 @@ from hypothesis_engine.models import (
     VerificationResult,
 )
 
-# Bumped when verification schema gains multi-check dimensions (still one API call).
+# Schema tags for Phase 2 thin slices (still one API call per step type).
 VERIFICATION_SCHEMA = "multi_check_v1"
+TESTS_SCHEMA = "richer_tests_v1"
 
 
 def estimate_api_calls(n_hypotheses: int) -> int:
     """Rough live-mode call count: background + generate + verify×N + tests×N.
 
-    Multi-check verification still uses one verify call per hypothesis (richer
-    JSON, not extra round-trips).
+    Multi-check verification and richer tests still use one call each per
+    hypothesis (richer JSON, not extra round-trips).
     """
     n = max(1, min(5, int(n_hypotheses)))
     return 2 + 2 * n
@@ -102,9 +103,10 @@ def run_workflow(
         check_bits = ", ".join(f"{c.id}={c.status.value}" for c in ver.checks)
         _progress(f"{hyp.id} verification done ({ver.verdict.value}; {check_bits}).")
 
-        _tick(f"Suggesting tests for {hyp.id}…")
+        _tick(f"Suggesting richer tests for {hyp.id} (one API call)…")
         tests.extend(_step_tests(client, model, topic, hyp, ver))
-        _progress(f"{hyp.id} test suggestions done.")
+        n_tests = sum(1 for t in tests if t.hypothesis_id == hyp.id)
+        _progress(f"{hyp.id} test suggestions done ({n_tests}).")
 
     _progress("All API steps finished. Assembling report…")
     overall = _overall_notes(hypotheses, verifications)
@@ -121,6 +123,7 @@ def run_workflow(
             "n_hypotheses": n_hypotheses,
             "background_mode": "model_knowledge_only",
             "verification": VERIFICATION_SCHEMA,
+            "tests": TESTS_SCHEMA,
         },
     )
 
@@ -304,10 +307,56 @@ def _step_tests(
         return []
     tests: list[SuggestedTest] = []
     for item in raw:
-        if isinstance(item, dict) and "hypothesis_id" not in item:
+        if not isinstance(item, dict):
+            continue
+        if "hypothesis_id" not in item:
             item = {**item, "hypothesis_id": hyp.id}
-        tests.append(SuggestedTest.model_validate(item))
+        tests.append(_normalize_suggested_test(item, hyp_id=hyp.id))
     return tests
+
+
+def _normalize_suggested_test(item: dict, *, hyp_id: str) -> SuggestedTest:
+    """Coerce richer-test fields so partial model JSON still validates."""
+    data = dict(item)
+    data.setdefault("hypothesis_id", hyp_id)
+
+    for list_key in ("controls", "materials_or_data", "addresses_checks", "notes"):
+        raw = data.get(list_key)
+        if raw is None:
+            data[list_key] = []
+        elif isinstance(raw, str):
+            data[list_key] = [raw] if raw.strip() else []
+        elif isinstance(raw, list):
+            data[list_key] = [str(x).strip() for x in raw if str(x).strip()]
+        else:
+            data[list_key] = []
+
+    # Keep only known multi-check ids; normalize casing/separators.
+    allowed = set(REQUIRED_CHECK_IDS)
+    cleaned_ids: list[str] = []
+    for cid in data["addresses_checks"]:
+        norm = cid.lower().replace(" ", "_").replace("-", "_")
+        if norm in allowed and norm not in cleaned_ids:
+            cleaned_ids.append(norm)
+    data["addresses_checks"] = cleaned_ids
+
+    for str_key in (
+        "what_is_measured",
+        "rough_duration",
+        "description",
+        "title",
+        "what_would_falsify",
+    ):
+        val = data.get(str_key)
+        if val is None:
+            data[str_key] = ""
+        elif not isinstance(val, str):
+            data[str_key] = str(val)
+
+    if not data.get("method"):
+        data["method"] = "analysis"
+
+    return SuggestedTest.model_validate(data)
 
 
 def _overall_notes(
@@ -323,9 +372,57 @@ def _overall_notes(
             continue
         parts.append(f"{h.id}: verdict={v.verdict.value}, confidence={v.confidence.value}")
     return (
-        "Run complete (multi-check verification). "
+        "Run complete (multi-check verification + richer tests). "
         "Treat outputs as research aids, not established science. "
         + " | ".join(parts)
+    )
+
+
+def _mock_suggested_test(hid: str, *, plausible: bool) -> SuggestedTest:
+    """Deterministic richer-test row for dry-run."""
+    if plausible:
+        return SuggestedTest(
+            hypothesis_id=hid,
+            title=f"Mock test for {hid}",
+            method="simulation",
+            description=(
+                "Run a toy simulation that varies Y under controlled noise and "
+                "records steady-state X; compare against a null of no Y→X link."
+            ),
+            what_would_falsify="No dependence of X on Y under the stated conditions.",
+            what_is_measured="Steady-state value of X as a function of Y (synthetic units).",
+            controls=[
+                "Null model with Y shuffled",
+                "Hold Z fixed across runs",
+            ],
+            materials_or_data=[
+                "Laptop or small compute instance",
+                "Open-source ODE/agent simulator (mock)",
+            ],
+            addresses_checks=["testability", "confounds"],
+            rough_difficulty=Confidence.LOW,
+            rough_duration="hours",
+            notes=["dry-run", "not a real protocol"],
+        )
+    return SuggestedTest(
+        hypothesis_id=hid,
+        title=f"Mock pilot for {hid} (revision path)",
+        method="experiment",
+        description=(
+            "Minimal pilot that operationalizes X and Y with explicit baselines "
+            "before a full causal design (addresses confounds warn/fail)."
+        ),
+        what_would_falsify=(
+            "Pilot cannot define measurable X/Y, or baseline already matches "
+            "the predicted effect without manipulating Y."
+        ),
+        what_is_measured="Operational definitions of X and Y plus baseline rates.",
+        controls=["Pre-manipulation baseline", "Negative control condition"],
+        materials_or_data=["Lab notebook template", "Calibrated meter (mock)"],
+        addresses_checks=["confounds", "testability", "consistency"],
+        rough_difficulty=Confidence.MEDIUM,
+        rough_duration="days",
+        notes=["dry-run", "prefer clarify claim before large study"],
     )
 
 
@@ -368,17 +465,7 @@ def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
                 revision_suggestions=["Replace with live run for real critique"],
             )
         )
-        tests.append(
-            SuggestedTest(
-                hypothesis_id=hid,
-                title=f"Mock test for {hid}",
-                method="simulation",
-                description="Run a toy simulation that varies Y and measures X.",
-                what_would_falsify="No dependence of X on Y under the stated conditions.",
-                rough_difficulty=Confidence.LOW,
-                notes=["dry-run"],
-            )
-        )
+        tests.append(_mock_suggested_test(hid, plausible=plausible))
     return HypothesisBundle(
         topic=topic,
         background=background,
@@ -391,6 +478,7 @@ def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
             "dry_run": True,
             "n_hypotheses": n,
             "verification": VERIFICATION_SCHEMA,
+            "tests": TESTS_SCHEMA,
         },
     )
 

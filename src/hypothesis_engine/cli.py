@@ -332,10 +332,17 @@ def _print_human(console: Console, bundle: object) -> None:
 
     assert isinstance(bundle, HypothesisBundle)
     phase = bundle.meta.get("phase", 1)
-    ver_schema = bundle.meta.get("verification", "")
+    schema_bits = [
+        s
+        for s in (
+            bundle.meta.get("verification"),
+            bundle.meta.get("tests"),
+        )
+        if s
+    ]
     title = f"DagzTagz Hypothesis Engine (Phase {phase})"
-    if ver_schema:
-        title += f" · {ver_schema}"
+    if schema_bits:
+        title += " · " + " + ".join(str(s) for s in schema_bits)
     console.print(
         Panel.fit(
             f"[bold]{bundle.topic}[/bold]\n[dim]{bundle.overall_notes}[/dim]",
@@ -381,13 +388,34 @@ def _print_human(console: Console, bundle: object) -> None:
                 console.print(check_table)
         tests = [t for t in bundle.tests if t.hypothesis_id == hyp.id]
         if tests:
-            table = Table(title=f"Tests for {hyp.id}", show_lines=False)
-            table.add_column("Title")
+            table = Table(title=f"Tests for {hyp.id}", show_lines=True)
+            table.add_column("Title", style="bold")
             table.add_column("Method")
+            table.add_column("Measures")
             table.add_column("Falsify if…")
+            table.add_column("Diff / time")
             for t in tests:
-                table.add_row(t.title, t.method, t.what_would_falsify)
+                duration = t.rough_duration or "—"
+                table.add_row(
+                    t.title,
+                    t.method,
+                    t.what_is_measured or "—",
+                    t.what_would_falsify,
+                    f"{t.rough_difficulty.value} / {duration}",
+                )
             console.print(table)
+            for t in tests:
+                bits: list[str] = []
+                if t.controls:
+                    bits.append("controls: " + "; ".join(t.controls))
+                if t.materials_or_data:
+                    bits.append("materials/data: " + "; ".join(t.materials_or_data))
+                if t.addresses_checks:
+                    bits.append("addresses checks: " + ", ".join(t.addresses_checks))
+                if t.notes:
+                    bits.append("notes: " + "; ".join(t.notes))
+                if bits:
+                    console.print(f"  [dim]· {t.title}:[/dim] " + " | ".join(bits))
 
     powered = ""
     if not bundle.meta.get("dry_run"):

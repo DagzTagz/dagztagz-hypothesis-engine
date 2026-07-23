@@ -34,8 +34,9 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 ### Phase 2 — shipping now
 - **Multi-check verification** (`meta.verification = multi_check_v1`): each hypothesis is scored on **consistency**, **testability**, **confounds**, and **prior_knowledge** (plus overall verdict). Still **one API call** per hypothesis for verify—richer JSON, not extra cost from extra round-trips.
 - Human CLI table and JSON `verifications[].checks[]` for the four dimensions
+- **Richer experiment suggestions** (`meta.tests = richer_tests_v1`): each suggested test includes what is measured, controls, materials/data, which multi-check ids it addresses, and a coarse duration—still **one tests API call** per hypothesis
 
-**Note:** The runnable app is still a **single, well-prompted workflow** (not multi-agent). Phase 2 continues in thin slices.
+**Note:** The runnable app is still a **single, well-prompted workflow** (not multi-agent). Phase 2 continues in thin slices. Measurement/construct-fit depth beyond `what_is_measured` is deferred.
 
 ---
 
@@ -44,8 +45,9 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 Landed / next:
 
 - [x] Stronger verification (multi-check `multi_check_v1`)
+- [x] Richer experiment suggestions (`richer_tests_v1`)
 - [ ] Literature-style retrieval (RAG) when ready
-- [ ] Richer experiment-suggestion capabilities
+- [ ] Deeper measurement / operationalization fit (later thin slice)
 
 Track detail in [Roadmap](#roadmap).
 
@@ -254,8 +256,9 @@ Even if you just want to follow along or ask questions, feel free to open an iss
 
 ### Phase 2 — current
 - Multi-check verification (`multi_check_v1`) — shipping
+- Richer experiment suggestions (`richer_tests_v1`) — shipping
 - Add literature retrieval (RAG)
-- Expand experiment-suggestion capabilities
+- Deeper measurement / operationalization fit (later)
 - Thin, reviewable slices preferred over big-bang rewrites
 
 ### Phase 3

@@ -8,8 +8,10 @@ from hypothesis_engine.cli import main
 from hypothesis_engine.llm import parse_json_object
 from hypothesis_engine.models import REQUIRED_CHECK_IDS, CheckStatus
 from hypothesis_engine.workflow import (
+    TESTS_SCHEMA,
     VERIFICATION_SCHEMA,
     _normalize_checks,
+    _normalize_suggested_test,
     estimate_api_calls,
     run_workflow,
 )
@@ -20,16 +22,27 @@ def test_dry_run_bundle_shape():
     assert bundle.topic == "quantum biology"
     assert len(bundle.hypotheses) == 2
     assert len(bundle.verifications) == 2
+    assert len(bundle.tests) == 2
     assert bundle.meta.get("dry_run") is True
     assert bundle.meta.get("verification") == VERIFICATION_SCHEMA
+    assert bundle.meta.get("tests") == TESTS_SCHEMA
     assert bundle.meta.get("phase") == 2
     for ver in bundle.verifications:
         assert [c.id for c in ver.checks] == list(REQUIRED_CHECK_IDS)
         assert all(isinstance(c.status, CheckStatus) for c in ver.checks)
         assert all(c.summary for c in ver.checks)
+    for t in bundle.tests:
+        assert t.what_is_measured
+        assert t.controls
+        assert t.materials_or_data
+        assert t.addresses_checks
+        assert t.rough_duration
+        assert set(t.addresses_checks) <= set(REQUIRED_CHECK_IDS)
     payload = json.loads(bundle.model_dump_json())
     assert "background" in payload
     assert payload["verifications"][0]["checks"][0]["id"] == "consistency"
+    assert payload["tests"][0]["what_is_measured"]
+    assert payload["meta"]["tests"] == "richer_tests_v1"
 
 
 def test_normalize_checks_fills_missing_and_orders():
@@ -54,10 +67,32 @@ def test_normalize_checks_empty_input():
 
 
 def test_estimate_api_calls_unchanged_by_multi_check():
-    # Multi-check is richer JSON in the same verify call, not extra round-trips.
+    # Multi-check / richer tests are richer JSON in the same calls, not extra trips.
     assert estimate_api_calls(1) == 4
     assert estimate_api_calls(2) == 6
     assert estimate_api_calls(5) == 12
+
+
+def test_normalize_suggested_test_coerces_partial_payload():
+    t = _normalize_suggested_test(
+        {
+            "title": "Pilot",
+            "method": "experiment",
+            "description": "Do a small pilot",
+            "what_would_falsify": "No signal",
+            "controls": "single string control",
+            "materials_or_data": ["kit A", "", "  kit B  "],
+            "addresses_checks": ["Confounds", "unknown_check", "testability", "confounds"],
+            "what_is_measured": None,
+        },
+        hyp_id="H1",
+    )
+    assert t.hypothesis_id == "H1"
+    assert t.controls == ["single string control"]
+    assert t.materials_or_data == ["kit A", "kit B"]
+    assert t.addresses_checks == ["confounds", "testability"]
+    assert t.what_is_measured == ""
+    assert t.rough_duration == ""
 
 
 def test_empty_topic_raises():
@@ -86,4 +121,7 @@ def test_cli_dry_run_json(capsys):
     assert data["topic"] == "test topic"
     assert len(data["hypotheses"]) == 1
     assert data["meta"]["verification"] == "multi_check_v1"
+    assert data["meta"]["tests"] == "richer_tests_v1"
     assert len(data["verifications"][0]["checks"]) == 4
+    assert data["tests"][0]["controls"]
+    assert data["tests"][0]["addresses_checks"]

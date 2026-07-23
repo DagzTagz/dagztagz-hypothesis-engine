@@ -100,21 +100,37 @@ Topic:
 Hypothesis (JSON):
 {hypothesis_json}
 
-Verification (JSON):
+Verification including multi-check results (JSON):
 {verification_json}
 
 Suggest 1-3 concrete ways to TEST this hypothesis (lab experiment, field study,
-computational simulation, data analysis, etc.). Each suggestion should say what
-result would FALSIFY the hypothesis.
+computational simulation, data analysis, etc.).
+
+Design rules:
+- Prefer designs that respond to weak multi-check results (status warn/fail),
+  especially confounds and testability — name those ids in addresses_checks.
+- Each test must state what result would FALSIFY the hypothesis.
+- Be concrete about what is measured (observables/quantities), not slogans.
+- List realistic controls/baselines and key materials or data sources.
+- Do NOT invent paper titles, DOIs, or claim a live literature search.
+- These are research-design sketches, not certified protocols or ethics approval.
+- Prefer simpler designs when the hypothesis is already not_testable or contradicted
+  (e.g. first clarify operationalization, then a minimal pilot).
 
 Return ONLY JSON with key "tests": array of objects with:
 - hypothesis_id (string)
 - title (string)
 - method (string: experiment | simulation | analysis | observation)
-- description (string)
+- description (string; steps / design outline)
 - what_would_falsify (string)
+- what_is_measured (string; the observable or quantity recorded)
+- controls (array of strings; baselines, sham, negative controls, covariates, etc.)
+- materials_or_data (array of strings; instruments, reagents, datasets, compute)
+- addresses_checks (array of strings; subset of consistency|testability|confounds|
+  prior_knowledge that this design is meant to pressure-test)
 - rough_difficulty (low|medium|high)
-- notes (array of strings)
+- rough_duration (string; e.g. "hours", "days", "weeks", "months")
+- notes (array of strings; caveats, ethics, feasibility)
 
 Return ONLY JSON.
 """

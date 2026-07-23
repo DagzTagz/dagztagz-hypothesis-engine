@@ -51,10 +51,19 @@ def test_bundle_roundtrip_json():
                 method="experiment",
                 description="Controlled lab assay",
                 what_would_falsify="Y does not change with X",
+                what_is_measured="Y under controlled X",
+                controls=["vehicle control"],
+                materials_or_data=["assay kit"],
+                addresses_checks=["testability", "confounds"],
+                rough_duration="days",
             )
         ],
         overall_notes="ok",
-        meta={"phase": 2, "verification": "multi_check_v1"},
+        meta={
+            "phase": 2,
+            "verification": "multi_check_v1",
+            "tests": "richer_tests_v1",
+        },
     )
     data = bundle.to_pretty_dict()
     again = HypothesisBundle.model_validate(data)
@@ -62,6 +71,8 @@ def test_bundle_roundtrip_json():
     assert again.verifications[0].verdict == Verdict.PLAUSIBLE
     assert len(again.verifications[0].checks) == 4
     assert again.verifications[0].checks[0].id == "consistency"
+    assert again.tests[0].what_is_measured == "Y under controlled X"
+    assert again.tests[0].addresses_checks == ["testability", "confounds"]
 
 
 def test_verification_checks_default_empty():
@@ -72,3 +83,19 @@ def test_verification_checks_default_empty():
         consistency_notes="legacy shape",
     )
     assert ver.checks == []
+
+
+def test_suggested_test_legacy_minimal_still_validates():
+    """Pre-richer-tests payloads without new fields still validate."""
+    t = SuggestedTest(
+        hypothesis_id="H1",
+        title="Old shape",
+        method="analysis",
+        description="Re-analyze public data",
+        what_would_falsify="No association after controls",
+    )
+    assert t.what_is_measured == ""
+    assert t.controls == []
+    assert t.materials_or_data == []
+    assert t.addresses_checks == []
+    assert t.rough_duration == ""

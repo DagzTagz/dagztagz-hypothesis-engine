@@ -103,14 +103,37 @@ class VerificationResult(BaseModel):
 
 
 class SuggestedTest(BaseModel):
-    """A concrete way to test a hypothesis."""
+    """A concrete way to test a hypothesis (richer Phase 2 experiment design)."""
 
     hypothesis_id: str
     title: str
     method: str = Field(description="experiment | simulation | analysis | observation")
     description: str
     what_would_falsify: str
+    what_is_measured: str = Field(
+        default="",
+        description="What observable / quantity this design actually records",
+    )
+    controls: list[str] = Field(
+        default_factory=list,
+        description="Controls, baselines, or comparison conditions",
+    )
+    materials_or_data: list[str] = Field(
+        default_factory=list,
+        description="Key materials, instruments, datasets, or compute needed",
+    )
+    addresses_checks: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Multi-check ids this design responds to "
+            "(e.g. confounds, testability) when known"
+        ),
+    )
     rough_difficulty: Confidence = Confidence.MEDIUM
+    rough_duration: str = Field(
+        default="",
+        description="Coarse time scale, e.g. hours | days | weeks | months",
+    )
     notes: list[str] = Field(default_factory=list)
 
 
