@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hypothesis_engine.cli import _friendly_error, main
+from hypothesis_engine import __version__
+from hypothesis_engine.cli import _display_topic, _friendly_error, main
+from hypothesis_engine.config import Settings
 from hypothesis_engine.workflow import estimate_api_calls
 
 
@@ -98,3 +100,40 @@ def test_friendly_error_missing_key():
     msg = _friendly_error(RuntimeError("Missing XAI_API_KEY. Copy .env.example"))
     assert "XAI_API_KEY" in msg
     assert "getting-started" in msg.lower() or ".env" in msg
+
+
+def test_friendly_error_redacts_key_shaped_text():
+    msg = _friendly_error(RuntimeError("upstream said sk-abc123secret in body"))
+    assert "sk-abc" not in msg
+    assert "redacted" in msg.lower() or "secret-like" in msg.lower()
+
+
+def test_display_topic_truncates():
+    long = "a" * 200
+    shown = _display_topic(long, limit=50)
+    assert len(shown) == 50
+    assert shown.endswith("…")
+
+
+def test_settings_trusted_xai_host():
+    s = Settings(XAI_BASE_URL="https://api.x.ai/v1")
+    assert s.uses_trusted_xai_host() is True
+    s2 = Settings(XAI_BASE_URL="https://evil.example/v1")
+    assert s2.uses_trusted_xai_host() is False
+
+
+def test_cli_version_and_engine_meta(capsys):
+    code = main(["--dry-run", "--json-only", "-n", "1", "version topic"])
+    assert code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["meta"]["engine_version"] == __version__
+    assert __version__ == "0.2.1"
+
+
+def test_cli_rejects_n_out_of_range():
+    # argparse choices should reject before workflow (exits process)
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--dry-run", "--json-only", "-n", "9", "bad n"])
+    assert exc.value.code == 2

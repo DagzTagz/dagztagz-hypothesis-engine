@@ -4,14 +4,18 @@ import json
 
 import pytest
 
+from hypothesis_engine import __version__
 from hypothesis_engine.cli import main
 from hypothesis_engine.llm import parse_json_object
-from hypothesis_engine.models import REQUIRED_CHECK_IDS, CheckStatus
+from hypothesis_engine.models import REQUIRED_CHECK_IDS, CheckStatus, Confidence, Verdict
 from hypothesis_engine.workflow import (
     TESTS_SCHEMA,
     VERIFICATION_SCHEMA,
     _normalize_checks,
     _normalize_suggested_test,
+    _normalize_verification,
+    _parse_confidence,
+    _parse_verdict,
     estimate_api_calls,
     run_workflow,
 )
@@ -27,6 +31,7 @@ def test_dry_run_bundle_shape():
     assert bundle.meta.get("verification") == VERIFICATION_SCHEMA
     assert bundle.meta.get("tests") == TESTS_SCHEMA
     assert bundle.meta.get("phase") == 2
+    assert bundle.meta.get("engine_version") == __version__
     for ver in bundle.verifications:
         assert [c.id for c in ver.checks] == list(REQUIRED_CHECK_IDS)
         assert all(isinstance(c.status, CheckStatus) for c in ver.checks)
@@ -84,6 +89,7 @@ def test_normalize_suggested_test_coerces_partial_payload():
             "materials_or_data": ["kit A", "", "  kit B  "],
             "addresses_checks": ["Confounds", "unknown_check", "testability", "confounds"],
             "what_is_measured": None,
+            "rough_difficulty": "not-a-real-level",
         },
         hyp_id="H1",
     )
@@ -93,6 +99,46 @@ def test_normalize_suggested_test_coerces_partial_payload():
     assert t.addresses_checks == ["confounds", "testability"]
     assert t.what_is_measured == ""
     assert t.rough_duration == ""
+    assert t.rough_difficulty == Confidence.MEDIUM
+
+
+def test_normalize_suggested_test_unknown_method_and_missing_title():
+    t = _normalize_suggested_test(
+        {
+            "method": "quantum-vibes",
+            "description": "x",
+            "what_would_falsify": "y",
+        },
+        hyp_id="H2",
+    )
+    assert t.method == "analysis"
+    assert t.title.startswith("Suggested test")
+    assert t.hypothesis_id == "H2"
+
+
+def test_normalize_verification_soft_defaults_bad_enums():
+    ver = _normalize_verification(
+        {
+            "verdict": "totally_wrong_label",
+            "confidence": "super-high",
+            "consistency_notes": "notes",
+            "checks": [
+                {"id": "consistency", "status": "maybe", "summary": "s"},
+            ],
+        },
+        hyp_id="H1",
+    )
+    assert ver.verdict == Verdict.NEEDS_REVISION
+    assert ver.confidence == Confidence.MEDIUM
+    assert ver.checks[0].status.value == "unclear"
+    assert ver.hypothesis_id == "H1"
+
+
+def test_parse_helpers():
+    assert _parse_confidence("HIGH") == Confidence.HIGH
+    assert _parse_confidence("nope") == Confidence.MEDIUM
+    assert _parse_verdict("not_testable") == Verdict.NOT_TESTABLE
+    assert _parse_verdict("???") == Verdict.NEEDS_REVISION
 
 
 def test_empty_topic_raises():

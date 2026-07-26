@@ -9,6 +9,39 @@ Versions follow [Semantic Versioning](https://semver.org/) while pre-1.0 (`0.x` 
 
 ---
 
+## [0.2.1] — 2026-07-24 — polish patch
+
+Hardening and UX polish on top of **0.2.0**. No new science features. Still iterative / not a finished product.
+
+### Fixed / hardened
+
+- **Soft-normalize model JSON** for verify + tests: bad enums (`verdict`, `confidence`, `check status`, `rough_difficulty`) default safely instead of crashing the run; unknown test `method` → `analysis`.
+- **Clip runaway text/lists** from model output (field and list caps) to limit memory/log bloat.
+- **Skip unusable hypothesis rows** when one object in the batch is broken (still require at least one good hypothesis).
+- **Live cost panel:** show model + API endpoint; **warn** if `XAI_BASE_URL` is not the trusted `api.x.ai` host (key + topic would leave default xAI).
+- **Display-truncate** long topics in the live confirmation panel (full topic still used for the run).
+- **CLI:** `-n` restricted to 1–5 at argparse; footer shows `v0.2.1` and dry-run/live; remind owner-only file modes when writing `-o` / audit log.
+- **Friendlier errors** for schema validation; avoid echoing secret-like substrings in error text.
+- Bundle **`meta.engine_version`** set to the package version.
+
+### Privacy / safety notes
+
+- No change to audit topic hashing/encryption model.
+- Live mode still sends the full topic to the configured API host — the new endpoint warning makes mis-set `XAI_BASE_URL` harder to miss.
+- Output/audit **`0600`** behavior from 0.2.0 unchanged.
+
+### Upgrade
+
+```bash
+git pull   # or re-download the 0.2.1 tag/ZIP when published
+pip install -e ".[dev]"
+hypothesis-engine --version   # expect 0.2.1
+```
+
+No mandatory `chmod` beyond what 0.2.0 already recommended for older files.
+
+---
+
 ## [0.2.0] — 2026-07-23 — second public iteration
 
 **Think of this as “version 2” of the public project:** Phase 2 features plus a **local privacy fix** that matters if you still have files from older runs.

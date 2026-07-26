@@ -7,9 +7,9 @@ The goal of this project is to create a transparent, auditable AI tool that help
 
 This project is inspired by xAI’s mission to advance our understanding of the universe through maximally truth-seeking AI. Live model calls use the **xAI Grok API** under **your** account and terms.
 
-> **Current Status**: **v0.2.0** (second public iteration) · **Phase 2** in progress.  
-> Shipping: multi-check verification (`multi_check_v1`), richer tests (`richer_tests_v1`), and a **local privacy fix** (owner-only `0600` for `-o` / `--audit-log`).  
-> **If you used an older ZIP or 0.1.x install:** read [CHANGELOG 0.2.0](CHANGELOG.md#020--2026-07-23--second-public-iteration) and run `chmod 600` on existing `out.json` / `audit.jsonl` (and `.env`). This is **not** a finished product — iterative, disclosed early.
+> **Current Status**: **v0.2.1** (polish patch on **0.2.0**) · **Phase 2** in progress.  
+> Shipping: multi-check (`multi_check_v1`), richer tests (`richer_tests_v1`), owner-only `0600` outputs, plus **0.2.1** soft JSON normalize / live endpoint warning / UX polish.  
+> **If you used 0.1.x:** see [CHANGELOG](CHANGELOG.md) (chmod note in 0.2.0). **Not a finished product** — iterative, disclosed early.
 
 ---
 
@@ -33,11 +33,12 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 - Structured output (hypothesis + verification + suggested tests)
 - Dry-run mode, live Grok API path, CI (pytest + ruff), optional local audit logging
 
-### Phase 2 — shipping now (v0.2.0)
+### Phase 2 — shipping now (v0.2.1)
 - **Multi-check verification** (`meta.verification = multi_check_v1`): each hypothesis is scored on **consistency**, **testability**, **confounds**, and **prior_knowledge** (plus overall verdict). Still **one API call** per hypothesis for verify—richer JSON, not extra cost from extra round-trips.
 - Human CLI table and JSON `verifications[].checks[]` for the four dimensions
 - **Richer experiment suggestions** (`meta.tests = richer_tests_v1`): each suggested test includes what is measured, controls, materials/data, which multi-check ids it addresses, and a coarse duration—still **one tests API call** per hypothesis
 - **Local file privacy:** `-o` and `--audit-log` files are written as owner-only (`0600`). See [CHANGELOG](CHANGELOG.md) if you have older files.
+- **0.2.1 polish:** soft-normalize flaky model enums, field length caps, live API host warning, CLI version footer (`meta.engine_version`)
 
 **Note:** The runnable app is still a **single, well-prompted workflow** (not multi-agent). **Not a finished product** — thin, reviewable slices. Measurement/construct-fit depth beyond `what_is_measured` is deferred. History of user-facing changes: **[CHANGELOG.md](CHANGELOG.md)**.
 

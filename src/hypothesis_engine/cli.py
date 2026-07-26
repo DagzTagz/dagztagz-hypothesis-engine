@@ -15,10 +15,13 @@ from rich.table import Table
 
 from hypothesis_engine import __version__
 from hypothesis_engine.audit import AuditEncryptionUnavailable, topic_audit_fields
+from hypothesis_engine.config import get_settings
 from hypothesis_engine.workflow import bundle_to_json, estimate_api_calls, run_workflow
 
 # Owner read/write only — avoid group/other-readable research outputs on shared hosts.
 _PRIVATE_FILE_MODE = 0o600
+# Truncate long topics in human panels (full topic still used for the run).
+_DISPLAY_TOPIC_MAX = 160
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--num-hypotheses",
         type=int,
         default=2,
+        choices=(1, 2, 3, 4, 5),
+        metavar="N",
         help="Number of hypotheses to generate (1-5, default: 2)",
     )
     parser.add_argument(
@@ -106,7 +111,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if not dry_run:
-        if not _confirm_live(err, topic=topic, n=n, estimated=estimated, assume_yes=args.yes):
+        settings = get_settings()
+        if not _confirm_live(
+            err,
+            topic=topic,
+            n=n,
+            estimated=estimated,
+            assume_yes=args.yes,
+            model=settings.xai_model,
+            base_url=settings.xai_base_url,
+            trusted_host=settings.uses_trusted_xai_host(),
+        ):
             _audit(
                 args.audit_log,
                 {
@@ -184,15 +199,31 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_human(out, bundle)
     if args.output:
-        out.print(f"\n[dim]Wrote JSON to {args.output}[/dim]")
+        out.print(
+            f"\n[dim]Wrote JSON to {args.output} "
+            f"(owner-only permissions when the OS allows)[/dim]"
+        )
     if args.audit_log:
-        out.print(f"[dim]Appended audit events to {args.audit_log}[/dim]")
+        out.print(
+            f"[dim]Appended audit events to {args.audit_log} "
+            f"(owner-only permissions when the OS allows)[/dim]"
+        )
+    mode = "dry-run" if dry_run else "live"
+    out.print(f"[dim]hypothesis-engine v{__version__} · {mode}[/dim]")
     return 0
 
 
 def estimate_calls_for_cli(n: int) -> int:
     """Exposed for tests; same as workflow helper."""
     return estimate_api_calls(n)
+
+
+def _display_topic(topic: str, *, limit: int = _DISPLAY_TOPIC_MAX) -> str:
+    """Shorten topic for panels; does not change the topic sent to the model."""
+    t = topic.strip()
+    if len(t) <= limit:
+        return t
+    return t[: limit - 1] + "…"
 
 
 def _confirm_live(
@@ -202,13 +233,25 @@ def _confirm_live(
     n: int,
     estimated: int,
     assume_yes: bool,
+    model: str = "grok-4.5",
+    base_url: str = "https://api.x.ai/v1",
+    trusted_host: bool = True,
 ) -> bool:
     """Return True if live run should proceed."""
+    endpoint_line = f"API endpoint: [bold]{base_url}[/bold]\n"
+    if not trusted_host:
+        endpoint_line += (
+            "[bold yellow]Warning:[/bold yellow] XAI_BASE_URL is not the default "
+            "api.x.ai host. Your API key and topic will be sent to this URL. "
+            "Only continue if you trust that endpoint.\n"
+        )
     console.print(
         Panel.fit(
             "[bold red]LIVE MODE — THIS CAN COST MONEY[/bold red]\n\n"
-            f"Topic: [bold]{topic}[/bold]\n"
+            f"Topic: [bold]{_display_topic(topic)}[/bold]\n"
             f"Hypotheses: [bold]{n}[/bold]\n"
+            f"Model: [bold]{model}[/bold]\n"
+            f"{endpoint_line}"
             f"Estimated xAI API calls: [bold]~{estimated}[/bold] "
             f"(background + generate + multi-check verify×{n} + tests×{n})\n\n"
             "[bold]Not a price quote.[/bold] Your bill depends on "
@@ -217,8 +260,9 @@ def _confirm_live(
             "Call count is only a rough estimate of how many API requests this run may make.\n\n"
             "Uses [bold]your[/bold] XAI_API_KEY and [bold]your[/bold] xAI credits.\n"
             "DagzTagz Hypothesis Engine does not pay for usage.\n"
+            "Topics go to the API provider in live mode (not only local).\n"
             "Dry-run is free: [cyan]hypothesis-engine --dry-run \"…\"[/cyan]",
-            title="Cost confirmation",
+            title=f"Cost confirmation · v{__version__}",
             border_style="red",
         )
     )
@@ -313,10 +357,24 @@ def _friendly_error(exc: BaseException) -> str:
             f"Details: {text[:280]}"
         )
 
-    # Avoid dumping huge traces; never echo env values
-    if len(text) > 400:
-        text = text[:400] + "…"
-    return f"{name}: {text}"
+    if "validation error" in lowered or name == "ValidationError":
+        return (
+            "The model returned JSON that did not match the expected schema "
+            "even after soft normalization. Try again, or reduce -n. "
+            f"Details: {text[:280]}"
+        )
+
+    # Avoid dumping huge traces; never echo env values / key-shaped tokens
+    redacted = text
+    for needle in ("sk-", "xai-", "api_key", "apikey", "bearer "):
+        if needle in redacted.lower():
+            redacted = (
+                f"{name}: [details redacted — possible secret-like text in error]"
+            )
+            break
+    if len(redacted) > 400:
+        redacted = redacted[:400] + "…"
+    return f"{name}: {redacted}" if not redacted.startswith(name) else redacted
 
 
 def _chmod_private(path: Path) -> None:

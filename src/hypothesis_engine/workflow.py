@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from openai import OpenAI
 
-from hypothesis_engine import prompts
+from hypothesis_engine import __version__, prompts
 from hypothesis_engine.config import Settings, get_settings
 from hypothesis_engine.llm import build_client, chat_json
 from hypothesis_engine.models import (
@@ -26,6 +26,14 @@ from hypothesis_engine.models import (
 # Schema tags for Phase 2 thin slices (still one API call per step type).
 VERIFICATION_SCHEMA = "multi_check_v1"
 TESTS_SCHEMA = "richer_tests_v1"
+
+# Soft caps so a runaway model reply cannot blow up memory/logs (polish / safety).
+_MAX_FIELD_CHARS = 4000
+_MAX_LIST_ITEMS = 24
+_MAX_LIST_ITEM_CHARS = 500
+_KNOWN_TEST_METHODS = frozenset(
+    {"experiment", "simulation", "analysis", "observation"}
+)
 
 
 def estimate_api_calls(n_hypotheses: int) -> int:
@@ -119,6 +127,7 @@ def run_workflow(
         overall_notes=overall,
         meta={
             "phase": 2,
+            "engine_version": __version__,
             "model": model,
             "n_hypotheses": n_hypotheses,
             "background_mode": "model_knowledge_only",
@@ -164,8 +173,18 @@ def _step_generate(
     raw = data.get("hypotheses", data if isinstance(data, list) else [])
     if not isinstance(raw, list) or not raw:
         raise ValueError("Model returned no hypotheses")
-    hyps = [Hypothesis.model_validate(item) for item in raw[:n]]
-    # Normalize ids if model forgot them
+    hyps: list[Hypothesis] = []
+    for i, item in enumerate(raw[:n], start=1):
+        if not isinstance(item, dict):
+            continue
+        try:
+            h = _normalize_hypothesis(item, fallback_id=f"H{i}")
+        except Exception:  # noqa: BLE001 — skip one bad row
+            continue
+        hyps.append(h)
+    if not hyps:
+        raise ValueError("Model returned no usable hypotheses")
+    # Normalize ids if model forgot them / duplicates
     for i, h in enumerate(hyps, start=1):
         if not h.id:
             h.id = f"H{i}"
@@ -190,8 +209,119 @@ def _step_verify(
         ),
         temperature=0.3,
     )
-    if "hypothesis_id" not in data:
-        data["hypothesis_id"] = hyp.id
+    return _normalize_verification(data if isinstance(data, dict) else {}, hyp_id=hyp.id)
+
+
+def _clip_text(value: object, *, max_chars: int = _MAX_FIELD_CHARS) -> str:
+    if value is None:
+        return ""
+    text = value if isinstance(value, str) else str(value)
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1] + "…"
+
+
+def _clip_str_list(raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        items = [raw] if raw.strip() else []
+    elif isinstance(raw, list):
+        items = [str(x).strip() for x in raw if str(x).strip()]
+    else:
+        return []
+    out: list[str] = []
+    for item in items[:_MAX_LIST_ITEMS]:
+        out.append(_clip_text(item, max_chars=_MAX_LIST_ITEM_CHARS))
+    return out
+
+
+def _parse_confidence(raw: object, *, default: Confidence = Confidence.MEDIUM) -> Confidence:
+    if isinstance(raw, Confidence):
+        return raw
+    if isinstance(raw, str):
+        key = raw.strip().lower()
+        try:
+            return Confidence(key)
+        except ValueError:
+            pass
+    return default
+
+
+def _parse_verdict(raw: object, *, default: Verdict = Verdict.NEEDS_REVISION) -> Verdict:
+    if isinstance(raw, Verdict):
+        return raw
+    if isinstance(raw, str):
+        key = raw.strip().lower().replace(" ", "_").replace("-", "_")
+        try:
+            return Verdict(key)
+        except ValueError:
+            pass
+    return default
+
+
+def _parse_check_status(raw: object) -> CheckStatus:
+    if isinstance(raw, CheckStatus):
+        return raw
+    if isinstance(raw, str):
+        key = raw.strip().lower()
+        try:
+            return CheckStatus(key)
+        except ValueError:
+            pass
+    return CheckStatus.UNCLEAR
+
+
+def _normalize_hypothesis(item: dict, *, fallback_id: str) -> Hypothesis:
+    data = {
+        "id": _clip_text(item.get("id") or fallback_id, max_chars=32) or fallback_id,
+        "statement": _clip_text(item.get("statement")),
+        "rationale": _clip_text(item.get("rationale")),
+        "assumptions": _clip_str_list(item.get("assumptions")),
+        "domain": _clip_text(item.get("domain"), max_chars=200) or None,
+    }
+    if not data["statement"]:
+        raise ValueError("hypothesis missing statement")
+    if not data["rationale"]:
+        data["rationale"] = "No rationale provided by the model."
+    return Hypothesis.model_validate(data)
+
+
+def _normalize_verification(raw: dict, *, hyp_id: str) -> VerificationResult:
+    """Coerce multi-check verification JSON; soft-default bad enums."""
+    data = dict(raw)
+    data["hypothesis_id"] = _clip_text(data.get("hypothesis_id") or hyp_id, max_chars=32)
+    data["verdict"] = _parse_verdict(data.get("verdict")).value
+    data["confidence"] = _parse_confidence(data.get("confidence")).value
+    data["consistency_notes"] = _clip_text(
+        data.get("consistency_notes") or "No consistency notes returned."
+    )
+    data["contradictions"] = _clip_str_list(data.get("contradictions"))
+    data["revision_suggestions"] = _clip_str_list(data.get("revision_suggestions"))
+
+    critiques_in = data.get("critiques")
+    critiques: list[dict] = []
+    if isinstance(critiques_in, list):
+        for c in critiques_in[:_MAX_LIST_ITEMS]:
+            if not isinstance(c, dict):
+                continue
+            claim = _clip_text(c.get("claim"), max_chars=_MAX_LIST_ITEM_CHARS)
+            if not claim:
+                continue
+            critiques.append(
+                {
+                    "claim": claim,
+                    "severity": _parse_confidence(
+                        c.get("severity"), default=Confidence.MEDIUM
+                    ).value,
+                    "evidence_or_reasoning": _clip_text(
+                        c.get("evidence_or_reasoning") or "",
+                        max_chars=_MAX_LIST_ITEM_CHARS,
+                    ),
+                }
+            )
+    data["critiques"] = critiques
     data["checks"] = [
         c.model_dump(mode="json") for c in _normalize_checks(data.get("checks"))
     ]
@@ -212,7 +342,14 @@ def _normalize_checks(raw: object) -> list[CheckResult]:
             if cid not in REQUIRED_CHECK_IDS or cid in by_id:
                 continue
             try:
-                by_id[cid] = CheckResult.model_validate({**item, "id": cid})
+                by_id[cid] = CheckResult(
+                    id=cid,
+                    status=_parse_check_status(item.get("status")),
+                    summary=_clip_text(
+                        item.get("summary") or "No summary provided.",
+                        max_chars=_MAX_LIST_ITEM_CHARS,
+                    ),
+                )
             except Exception:  # noqa: BLE001 — bad model row → placeholder
                 by_id[cid] = CheckResult(
                     id=cid,
@@ -318,23 +455,16 @@ def _step_tests(
 def _normalize_suggested_test(item: dict, *, hyp_id: str) -> SuggestedTest:
     """Coerce richer-test fields so partial model JSON still validates."""
     data = dict(item)
-    data.setdefault("hypothesis_id", hyp_id)
+    data["hypothesis_id"] = _clip_text(data.get("hypothesis_id") or hyp_id, max_chars=32)
 
-    for list_key in ("controls", "materials_or_data", "addresses_checks", "notes"):
-        raw = data.get(list_key)
-        if raw is None:
-            data[list_key] = []
-        elif isinstance(raw, str):
-            data[list_key] = [raw] if raw.strip() else []
-        elif isinstance(raw, list):
-            data[list_key] = [str(x).strip() for x in raw if str(x).strip()]
-        else:
-            data[list_key] = []
+    data["controls"] = _clip_str_list(data.get("controls"))
+    data["materials_or_data"] = _clip_str_list(data.get("materials_or_data"))
+    data["notes"] = _clip_str_list(data.get("notes"))
 
     # Keep only known multi-check ids; normalize casing/separators.
     allowed = set(REQUIRED_CHECK_IDS)
     cleaned_ids: list[str] = []
-    for cid in data["addresses_checks"]:
+    for cid in _clip_str_list(data.get("addresses_checks")):
         norm = cid.lower().replace(" ", "_").replace("-", "_")
         if norm in allowed and norm not in cleaned_ids:
             cleaned_ids.append(norm)
@@ -347,14 +477,23 @@ def _normalize_suggested_test(item: dict, *, hyp_id: str) -> SuggestedTest:
         "title",
         "what_would_falsify",
     ):
-        val = data.get(str_key)
-        if val is None:
-            data[str_key] = ""
-        elif not isinstance(val, str):
-            data[str_key] = str(val)
+        data[str_key] = _clip_text(data.get(str_key))
 
-    if not data.get("method"):
-        data["method"] = "analysis"
+    if not data.get("title"):
+        data["title"] = f"Suggested test for {hyp_id}"
+    if not data.get("description"):
+        data["description"] = "No description provided by the model."
+    if not data.get("what_would_falsify"):
+        data["what_would_falsify"] = "Not specified by the model."
+
+    method = _clip_text(data.get("method") or "analysis", max_chars=64).lower()
+    if method not in _KNOWN_TEST_METHODS:
+        method = "analysis"
+    data["method"] = method
+
+    data["rough_difficulty"] = _parse_confidence(
+        data.get("rough_difficulty"), default=Confidence.MEDIUM
+    ).value
 
     return SuggestedTest.model_validate(data)
 
@@ -475,6 +614,7 @@ def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
         overall_notes="Dry-run mock output; no API calls were made.",
         meta={
             "phase": 2,
+            "engine_version": __version__,
             "dry_run": True,
             "n_hypotheses": n,
             "verification": VERIFICATION_SCHEMA,
