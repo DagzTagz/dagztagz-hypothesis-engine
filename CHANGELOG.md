@@ -9,6 +9,38 @@ Versions follow [Semantic Versioning](https://semver.org/) while pre-1.0 (`0.x` 
 
 ---
 
+## [0.3.0] — 2026-07-26 — RAG v0 (local files only)
+
+Privacy-first optional retrieval for the **background** step. **Not** a web literature search.
+
+### Added
+
+- **`--retrieve`** with **`--corpus DIR`** and/or **`--source FILE`** (repeatable).
+- **`--retrieve-k`** (1–10, default 5): max local passages.
+- Local scorer over **`.txt` / `.md`** only (non-recursive corpus dirs); size/file caps; no network for retrieval.
+- `RetrievedPassage` + `BackgroundBrief.sources` / `grounding`.
+- Dry-run: mock passages if no files; real local scoring when files are given.
+- Design note: [docs/design-rag-v0.md](docs/design-rag-v0.md).
+- User guide: [docs/local-corpus.md](docs/local-corpus.md) (build a local library, convert PDFs, run `--corpus`).
+- CLI **Sources** table; `meta.retrieval = rag_v0_local` when enabled.
+
+### Privacy
+
+- Retrieval reads **only paths you pass**. No remote paper API in v0.
+- **Live mode still sends topic + snippets to xAI** when you run without `--dry-run`.
+- Audit log still does not dump full file contents by default.
+
+### Upgrade
+
+```bash
+git pull && pip install -e ".[dev]"
+hypothesis-engine --version   # 0.3.0
+# example:
+hypothesis-engine --dry-run --retrieve --corpus ./my_notes -n 1 "your topic"
+```
+
+---
+
 ## [0.2.1] — 2026-07-24 — polish patch
 
 Hardening and UX polish on top of **0.2.0**. No new science features. Still iterative / not a finished product.

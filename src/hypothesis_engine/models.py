@@ -42,17 +42,40 @@ class CheckStatus(StrEnum):
     UNCLEAR = "unclear"
 
 
+class RetrievedPassage(BaseModel):
+    """One chunk from local (or mock) retrieval for RAG v0."""
+
+    id: str = Field(description="Stable id in this run, e.g. S1")
+    title: str
+    identifier: str = Field(description="Local path or mock:// identifier")
+    snippet: str = Field(description="Short excerpt used for grounding")
+    year: str | None = None
+    backend: str = Field(
+        default="local",
+        description="local | mock (v0 has no remote backends)",
+    )
+    score: float | None = None
+
+
 class BackgroundBrief(BaseModel):
-    """Phase 1 stand-in for literature retrieval (model knowledge only)."""
+    """Background briefing; optional local-file grounding (RAG v0)."""
 
     topic: str
     summary: str = Field(description="Short background briefing")
     key_concepts: list[str] = Field(default_factory=list)
     known_limitations: list[str] = Field(
         default_factory=list,
-        description="What this brief is NOT (e.g. not a literature search)",
+        description="What this brief is NOT (e.g. not a full literature search)",
     )
     caveats: list[str] = Field(default_factory=list)
+    sources: list[RetrievedPassage] = Field(
+        default_factory=list,
+        description="Retrieved local passages when --retrieve is used",
+    )
+    grounding: str = Field(
+        default="model_only",
+        description="model_only | retrieved | mixed",
+    )
 
 
 class Hypothesis(BaseModel):

@@ -54,6 +54,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not call the API; emit deterministic mock structured output (free)",
     )
     parser.add_argument(
+        "--retrieve",
+        action="store_true",
+        help=(
+            "Opt-in local-file retrieval for background (RAG v0, privacy-first). "
+            "Requires --corpus and/or --source (dry-run may use mock passages)."
+        ),
+    )
+    parser.add_argument(
+        "--corpus",
+        action="append",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Directory of .txt/.md files to search (non-recursive; repeatable)",
+    )
+    parser.add_argument(
+        "--source",
+        action="append",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Local .txt/.md file to include in retrieval (repeatable)",
+    )
+    parser.add_argument(
+        "--retrieve-k",
+        type=int,
+        default=5,
+        metavar="K",
+        help="Max local passages to keep when --retrieve is set (1-10, default 5)",
+    )
+    parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
@@ -98,7 +129,17 @@ def main(argv: list[str] | None = None) -> int:
     out = Console(stderr=False)
     n = args.num_hypotheses
     dry_run = args.dry_run
+    retrieve = bool(args.retrieve)
+    corpus_dirs = list(args.corpus or [])
+    source_files = list(args.source or [])
+    retrieve_k = max(1, min(10, int(args.retrieve_k)))
     estimated = estimate_api_calls(n) if not dry_run else 0
+
+    if retrieve and not dry_run and not corpus_dirs and not source_files:
+        parser.error(
+            "--retrieve requires --corpus DIR and/or --source FILE "
+            "(local files only in RAG v0). Dry-run may omit them and use mocks."
+        )
 
     try:
         topic_fields = topic_audit_fields(
@@ -121,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
             model=settings.xai_model,
             base_url=settings.xai_base_url,
             trusted_host=settings.uses_trusted_xai_host(),
+            retrieve=retrieve,
         ):
             _audit(
                 args.audit_log,
@@ -158,6 +200,10 @@ def main(argv: list[str] | None = None) -> int:
             n_hypotheses=n,
             dry_run=dry_run,
             on_progress=None if args.json_only and dry_run else _progress,
+            retrieve=retrieve,
+            corpus_dirs=corpus_dirs,
+            source_files=source_files,
+            retrieve_k=retrieve_k,
         )
     except Exception as exc:  # noqa: BLE001 — CLI boundary
         message = _friendly_error(exc)
@@ -236,6 +282,7 @@ def _confirm_live(
     model: str = "grok-4.5",
     base_url: str = "https://api.x.ai/v1",
     trusted_host: bool = True,
+    retrieve: bool = False,
 ) -> bool:
     """Return True if live run should proceed."""
     endpoint_line = f"API endpoint: [bold]{base_url}[/bold]\n"
@@ -245,6 +292,13 @@ def _confirm_live(
             "api.x.ai host. Your API key and topic will be sent to this URL. "
             "Only continue if you trust that endpoint.\n"
         )
+    retrieve_line = ""
+    if retrieve:
+        retrieve_line = (
+            "Local retrieval: [bold]on[/bold] (files scored on your machine; "
+            "snippets are still sent to the model with the topic).\n"
+            "Not a web literature search.\n"
+        )
     console.print(
         Panel.fit(
             "[bold red]LIVE MODE — THIS CAN COST MONEY[/bold red]\n\n"
@@ -252,6 +306,7 @@ def _confirm_live(
             f"Hypotheses: [bold]{n}[/bold]\n"
             f"Model: [bold]{model}[/bold]\n"
             f"{endpoint_line}"
+            f"{retrieve_line}"
             f"Estimated xAI API calls: [bold]~{estimated}[/bold] "
             f"(background + generate + multi-check verify×{n} + tests×{n})\n\n"
             "[bold]Not a price quote.[/bold] Your bill depends on "
@@ -421,11 +476,15 @@ def _print_human(console: Console, bundle: object) -> None:
 
     assert isinstance(bundle, HypothesisBundle)
     phase = bundle.meta.get("phase", 1)
+    retrieval_tag = bundle.meta.get("retrieval")
+    if retrieval_tag in (None, "off"):
+        retrieval_tag = None
     schema_bits = [
         s
         for s in (
             bundle.meta.get("verification"),
             bundle.meta.get("tests"),
+            retrieval_tag,
         )
         if s
     ]
@@ -439,11 +498,26 @@ def _print_human(console: Console, bundle: object) -> None:
         )
     )
     console.print("\n[bold]Background[/bold]")
+    grounding = getattr(bundle.background, "grounding", "model_only")
+    console.print(f"[dim]grounding: {grounding}[/dim]")
     console.print(bundle.background.summary)
     if bundle.background.known_limitations:
         console.print(
             "[dim]Limitations: " + "; ".join(bundle.background.known_limitations) + "[/dim]"
         )
+    sources = getattr(bundle.background, "sources", None) or []
+    if sources:
+        src_table = Table(title="Local sources (RAG v0)", show_lines=False)
+        src_table.add_column("Id", style="bold")
+        src_table.add_column("Title")
+        src_table.add_column("Backend")
+        src_table.add_column("Score")
+        src_table.add_column("Snippet")
+        for s in sources:
+            score = "" if s.score is None else f"{s.score:.3f}"
+            snip = s.snippet if len(s.snippet) <= 120 else s.snippet[:119] + "…"
+            src_table.add_row(s.id, s.title, s.backend, score, snip)
+        console.print(src_table)
 
     for hyp in bundle.hypotheses:
         console.print(f"\n[bold cyan]{hyp.id}[/bold cyan]  {hyp.statement}")

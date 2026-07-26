@@ -85,6 +85,14 @@ def test_verification_checks_default_empty():
     assert ver.checks == []
 
 
+def test_background_default_no_sources():
+    from hypothesis_engine.models import BackgroundBrief
+
+    b = BackgroundBrief(topic="t", summary="s")
+    assert b.sources == []
+    assert b.grounding == "model_only"
+
+
 def test_suggested_test_legacy_minimal_still_validates():
     """Pre-richer-tests payloads without new fields still validate."""
     t = SuggestedTest(

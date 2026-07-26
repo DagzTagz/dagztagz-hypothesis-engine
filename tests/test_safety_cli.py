@@ -127,7 +127,7 @@ def test_cli_version_and_engine_meta(capsys):
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["meta"]["engine_version"] == __version__
-    assert __version__ == "0.2.1"
+    assert __version__ == "0.3.0"
 
 
 def test_cli_rejects_n_out_of_range():

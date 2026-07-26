@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -18,14 +19,17 @@ from hypothesis_engine.models import (
     Confidence,
     Hypothesis,
     HypothesisBundle,
+    RetrievedPassage,
     SuggestedTest,
     Verdict,
     VerificationResult,
 )
+from hypothesis_engine.retrieval import mock_passages, retrieve_local
 
 # Schema tags for Phase 2 thin slices (still one API call per step type).
 VERIFICATION_SCHEMA = "multi_check_v1"
 TESTS_SCHEMA = "richer_tests_v1"
+RETRIEVAL_SCHEMA = "rag_v0_local"
 
 # Soft caps so a runaway model reply cannot blow up memory/logs (polish / safety).
 _MAX_FIELD_CHARS = 4000
@@ -54,6 +58,10 @@ def run_workflow(
     client: OpenAI | None = None,
     dry_run: bool = False,
     on_progress: Callable[[str], None] | None = None,
+    retrieve: bool = False,
+    corpus_dirs: list[Path] | None = None,
+    source_files: list[Path] | None = None,
+    retrieve_k: int = 5,
 ) -> HypothesisBundle:
     """Run the full pipeline for a topic (background → generate → verify → tests).
 
@@ -67,6 +75,12 @@ def run_workflow(
         If True, return deterministic mock output without calling the API.
     on_progress:
         Optional callback for human-readable step updates (e.g. CLI spinner text).
+    retrieve:
+        If True, ground background on local files (RAG v0). No remote fetch.
+    corpus_dirs / source_files:
+        Local paths for retrieval when retrieve=True.
+    retrieve_k:
+        Max passages to keep (1–10).
     """
     topic = topic.strip()
     if not topic:
@@ -79,10 +93,20 @@ def run_workflow(
             on_progress(message)
 
     settings = settings or get_settings()
+    corpus_dirs = list(corpus_dirs or [])
+    source_files = list(source_files or [])
+    retrieve_k = max(1, min(10, int(retrieve_k)))
 
     if dry_run:
         _progress("Dry-run: building mock results (no network)…")
-        return _mock_bundle(topic, n_hypotheses)
+        return _mock_bundle(
+            topic,
+            n_hypotheses,
+            retrieve=retrieve,
+            corpus_dirs=corpus_dirs,
+            source_files=source_files,
+            retrieve_k=retrieve_k,
+        )
 
     client = client or build_client(settings)
     model = settings.xai_model
@@ -94,8 +118,21 @@ def run_workflow(
         step += 1
         _progress(f"[{step}/{total}] {label}")
 
+    passages: list[RetrievedPassage] = []
+    retrieval_status = "skipped"
+    if retrieve:
+        _progress("Local retrieval: scoring your files (no remote search)…")
+        passages = retrieve_local(
+            topic,
+            corpus_dirs=corpus_dirs,
+            source_files=source_files,
+            k=retrieve_k,
+        )
+        retrieval_status = "ok" if passages else "empty"
+        _progress(f"Local retrieval done ({len(passages)} passage(s)).")
+
     _tick("Calling xAI for background brief (this can take a while)…")
-    background = _step_background(client, model, topic)
+    background = _step_background(client, model, topic, passages=passages)
     _progress("Background brief received.")
 
     _tick("Generating hypotheses (please wait; do not type)…")
@@ -118,6 +155,24 @@ def run_workflow(
 
     _progress("All API steps finished. Assembling report…")
     overall = _overall_notes(hypotheses, verifications)
+    bg_mode = (
+        "local_retrieval+model"
+        if retrieve and passages
+        else ("local_retrieval_empty" if retrieve else "model_knowledge_only")
+    )
+    meta: dict = {
+        "phase": 2,
+        "engine_version": __version__,
+        "model": model,
+        "n_hypotheses": n_hypotheses,
+        "background_mode": bg_mode,
+        "verification": VERIFICATION_SCHEMA,
+        "tests": TESTS_SCHEMA,
+        "retrieval": RETRIEVAL_SCHEMA if retrieve else "off",
+        "retrieval_backend": "local" if retrieve else "none",
+        "retrieval_status": retrieval_status if retrieve else "skipped",
+        "n_passages": len(passages) if retrieve else 0,
+    }
     return HypothesisBundle(
         topic=topic,
         background=background,
@@ -125,30 +180,87 @@ def run_workflow(
         verifications=verifications,
         tests=tests,
         overall_notes=overall,
-        meta={
-            "phase": 2,
-            "engine_version": __version__,
-            "model": model,
-            "n_hypotheses": n_hypotheses,
-            "background_mode": "model_knowledge_only",
-            "verification": VERIFICATION_SCHEMA,
-            "tests": TESTS_SCHEMA,
-        },
+        meta=meta,
     )
 
 
-def _step_background(client: OpenAI, model: str, topic: str) -> BackgroundBrief:
+def _step_background(
+    client: OpenAI,
+    model: str,
+    topic: str,
+    *,
+    passages: list[RetrievedPassage] | None = None,
+) -> BackgroundBrief:
+    passages = passages or []
+    if passages:
+        user = prompts.BACKGROUND_USER_RETRIEVED.format(
+            topic=topic,
+            passages_json=json.dumps(
+                [p.model_dump(mode="json") for p in passages],
+                ensure_ascii=False,
+            ),
+        )
+    else:
+        user = prompts.BACKGROUND_USER.format(topic=topic)
+
     data = chat_json(
         client,
         model=model,
         system=prompts.SYSTEM_SCIENTIST,
-        user=prompts.BACKGROUND_USER.format(topic=topic),
+        user=user,
         temperature=0.3,
     )
-    if "known_limitations" not in data:
+    return _normalize_background(data, topic=topic, passages=passages)
+
+
+def _normalize_background(
+    data: dict,
+    *,
+    topic: str,
+    passages: list[RetrievedPassage],
+) -> BackgroundBrief:
+    """Attach/normalize grounding + sources after the background LLM call."""
+    if not isinstance(data, dict):
+        data = {}
+    data = dict(data)
+    data.setdefault("topic", topic)
+    if "known_limitations" not in data or not data["known_limitations"]:
         data["known_limitations"] = [
-            "Phase 1 brief uses model knowledge only; not a literature search."
+            "Background is not a comprehensive literature search.",
         ]
+    if passages:
+        # Prefer engine-side sources of truth (paths the user supplied).
+        data["sources"] = [p.model_dump(mode="json") for p in passages]
+        grounding = str(data.get("grounding") or "mixed").strip().lower()
+        if grounding not in {"model_only", "retrieved", "mixed"}:
+            grounding = "mixed"
+        # Empty model claim of retrieved-only is ok; empty passages → model_only
+        data["grounding"] = grounding if grounding != "model_only" else "mixed"
+        lim = data.get("known_limitations")
+        if isinstance(lim, list):
+            note = (
+                "Grounding used local-file retrieval only (RAG v0); "
+                "not a full literature review."
+            )
+            if note not in lim:
+                lim = [str(x) for x in lim] + [note]
+            data["known_limitations"] = lim
+    else:
+        data["sources"] = []
+        data["grounding"] = "model_only"
+        if "summary" not in data:
+            data["summary"] = ""
+    # Soft lists
+    for key in ("key_concepts", "known_limitations", "caveats"):
+        val = data.get(key)
+        if val is None:
+            data[key] = []
+        elif isinstance(val, str):
+            data[key] = [val] if val.strip() else []
+        elif not isinstance(val, list):
+            data[key] = []
+    if not data.get("summary"):
+        data["summary"] = "No summary returned by the model."
     return BackgroundBrief.model_validate(data)
 
 
@@ -565,17 +677,57 @@ def _mock_suggested_test(hid: str, *, plausible: bool) -> SuggestedTest:
     )
 
 
-def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
+def _mock_bundle(
+    topic: str,
+    n: int,
+    *,
+    retrieve: bool = False,
+    corpus_dirs: list[Path] | None = None,
+    source_files: list[Path] | None = None,
+    retrieve_k: int = 5,
+) -> HypothesisBundle:
     """Deterministic offline output for demos and tests (no network)."""
-    background = BackgroundBrief(
-        topic=topic,
-        summary=(
+    passages: list[RetrievedPassage] = []
+    retrieval_status = "skipped"
+    if retrieve:
+        passages = retrieve_local(
+            topic,
+            corpus_dirs=corpus_dirs or [],
+            source_files=source_files or [],
+            k=retrieve_k,
+        )
+        if not passages:
+            passages = mock_passages(topic, k=min(2, retrieve_k))
+            retrieval_status = "ok"  # mock fill for dry-run demo
+        else:
+            retrieval_status = "ok"
+
+    if passages:
+        summary = (
+            f"Mock background for '{topic}' grounded on {len(passages)} local "
+            "passage(s) (dry-run). Not a literature search."
+        )
+        grounding = "mixed"
+        limitations = [
+            "dry-run mode; no LLM call",
+            "local-file retrieval only (RAG v0); not a full literature review",
+        ]
+    else:
+        summary = (
             f"Mock background for '{topic}'. In live mode this would be a short "
             "model-knowledge briefing, not a literature review."
-        ),
+        )
+        grounding = "model_only"
+        limitations = ["dry-run mode; no LLM call"]
+
+    background = BackgroundBrief(
+        topic=topic,
+        summary=summary,
         key_concepts=["mock-concept"],
-        known_limitations=["dry-run mode; no LLM call"],
+        known_limitations=limitations,
         caveats=["For local testing only"],
+        sources=passages,
+        grounding=grounding,
     )
     hypotheses: list[Hypothesis] = []
     verifications: list[VerificationResult] = []
@@ -619,8 +771,27 @@ def _mock_bundle(topic: str, n: int) -> HypothesisBundle:
             "n_hypotheses": n,
             "verification": VERIFICATION_SCHEMA,
             "tests": TESTS_SCHEMA,
+            "retrieval": RETRIEVAL_SCHEMA if retrieve else "off",
+            "retrieval_backend": _retrieval_backend_label(retrieve, passages),
+            "retrieval_status": retrieval_status if retrieve else "skipped",
+            "n_passages": len(passages) if retrieve else 0,
+            "background_mode": (
+                "local_retrieval+model" if retrieve and passages else "model_knowledge_only"
+            ),
         },
     )
+
+
+def _retrieval_backend_label(
+    retrieve: bool, passages: list[RetrievedPassage]
+) -> str:
+    if not retrieve:
+        return "none"
+    if any(p.backend == "local" for p in passages):
+        return "local"
+    if any(p.backend == "mock" for p in passages):
+        return "mock"
+    return "local"
 
 
 def bundle_to_json(bundle: HypothesisBundle, *, indent: int = 2) -> str:

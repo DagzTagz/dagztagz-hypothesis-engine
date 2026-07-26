@@ -326,12 +326,29 @@ Optional env overrides:
 
 Live users must follow [xAI’s terms](https://x.ai/legal/terms-of-service) and [Acceptable Use Policy](https://x.ai/legal/acceptable-use-policy).
 
+## Optional local library (RAG v0 — privacy-first)
+
+Background can be grounded on **your** local `.txt` / `.md` files with `--retrieve`.  
+PDFs must be converted to text first. Full walkthrough:
+
+→ **[docs/local-corpus.md](docs/local-corpus.md)** — build a private reservoir, convert PDFs, run `--corpus` / `--source`
+
+Quick dry-run example:
+
+```bash
+mkdir -p ~/hypothesis-corpus/text
+echo "Your notes about the topic…" > ~/hypothesis-corpus/text/notes.md
+hypothesis-engine --dry-run --retrieve --corpus ~/hypothesis-corpus/text -n 1 "your topic"
+```
+
+This is **not** a web literature search. Live mode still sends topic + snippets to xAI.
+
 ## What the pipeline does
 
-1. **Background brief** — model knowledge only (not RAG / not a paper search)
+1. **Background brief** — model knowledge by default; optional **local-file** retrieval (`--retrieve`)
 2. **Generate** N hypotheses (default 2)
-3. **Verify** each adversarially (consistency, testability, contradictions)
-4. **Suggest tests** with falsification criteria
+3. **Verify** each adversarially (multi-check: consistency, testability, confounds, prior_knowledge)
+4. **Suggest tests** (richer fields + falsification criteria)
 5. Print a readable report and optional JSON
 
 ## Tests

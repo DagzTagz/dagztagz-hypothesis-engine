@@ -31,6 +31,36 @@ Produce a short BACKGROUND BRIEF as JSON with keys:
 - key_concepts (array of strings)
 - known_limitations (array of strings; include that this is NOT a literature search)
 - caveats (array of strings; uncertainty, domain limits)
+- grounding (string): "model_only"
+- sources (array): []  (empty; no retrieval was provided)
+
+Return ONLY JSON.
+"""
+
+BACKGROUND_USER_RETRIEVED = """\
+Topic or research area:
+{topic}
+
+Locally retrieved passages from the USER's files (privacy-first RAG v0).
+These are NOT a full literature search. Do NOT invent papers, DOIs, or quotes
+that are not supported by these passages.
+
+Retrieved passages (JSON):
+{passages_json}
+
+Produce a short BACKGROUND BRIEF as JSON with keys:
+- topic (string)
+- summary (string, 1-3 paragraphs; prefer grounding in passage ids S1..Sk when possible)
+- key_concepts (array of strings)
+- known_limitations (array of strings; MUST state this is local-file retrieval only,
+  not a comprehensive literature review; if passages are thin, say so)
+- caveats (array of strings)
+- grounding (string): "mixed" if you use both passages and general knowledge,
+  or "retrieved" if almost entirely from passages, or "model_only" if passages
+  were empty/unusable
+- sources (array): copy the retrieved passage objects you relied on
+  (same shape: id, title, identifier, snippet, year, backend, score).
+  Do NOT add sources that were not in the retrieved list.
 
 Return ONLY JSON.
 """
