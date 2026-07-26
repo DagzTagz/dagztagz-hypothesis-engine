@@ -40,6 +40,8 @@ Keep the library **outside** the public git repo if it contains private notes or
 
 Do **not** commit copyrighted PDFs or sensitive lab data to GitHub unless you intend them to be public.
 
+If you place a library **inside** the clone, common folder names (`hypothesis-corpus/`, `corpus/`, `local-corpus/`, `my_notes/`) are listed in **`.gitignore`** so they are not committed by accident. Prefer a path **outside** the repo when material is private or licensed.
+
 ---
 
 ## Step-by-step: create the reservoir

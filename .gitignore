@@ -40,6 +40,13 @@ tmp/
 temp/
 .cache/
 
+# Local RAG libraries (private notes / converted papers — see docs/local-corpus.md)
+# Prefer keeping the library outside the clone; these names catch in-repo accidents.
+hypothesis-corpus/
+corpus/
+local-corpus/
+my_notes/
+
 # Python
 __pycache__/
 *.py[cod]
