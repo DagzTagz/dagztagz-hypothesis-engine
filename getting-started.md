@@ -124,6 +124,44 @@ JSON only:
 hypothesis-engine --dry-run --json-only -n 1 "coral bleaching" -o out.json
 ```
 
+## Optional: ground background on local notes (RAG v0)
+
+By default the background brief uses **model knowledge only**.  
+You can opt in to use **your own files** on disk (privacy-first — **not** a web literature search).
+
+| Need | Flag |
+|------|------|
+| Turn retrieval on | `--retrieve` |
+| Folder of notes | `--corpus DIR` (direct `.txt`/`.md` files only) |
+| Specific files | `--source FILE` (repeatable) |
+| How many hits | `--retrieve-k N` (1–10, default 5) |
+
+**1 — free dry-run with a tiny note**
+
+```bash
+mkdir -p ~/hypothesis-corpus/text
+echo "Chlorophyll and light spectrum affect photosynthesis efficiency." \
+  > ~/hypothesis-corpus/text/notes.md
+
+hypothesis-engine --dry-run --retrieve --corpus ~/hypothesis-corpus/text \
+  -n 1 "photosynthesis efficiency"
+```
+
+**2 — did it use your file or a dry-run mock?**
+
+| You see | Meaning |
+|---------|---------|
+| Sources **Backend `local`**, your filename, status **`ok`** | Real keyword match |
+| Sources **Backend `mock`**, titles like `mock-…`, status **`ok_mock`** | No usable match (dry-run demo fill) |
+
+```bash
+hypothesis-engine --dry-run --json-only --retrieve --corpus ~/hypothesis-corpus/text \
+  -n 1 "photosynthesis efficiency" \
+  | python -c "import json,sys; d=json.load(sys.stdin); print(d['meta'].get('retrieval_status'), d['meta'].get('retrieval_backend')); print([s['title'] for s in d['background']['sources']])"
+```
+
+**PDFs, folder layout, more options:** [docs/local-corpus.md](docs/local-corpus.md)
+
 ## Run (live — powered by Grok (xAI), **costs money**)
 
 ```bash
@@ -135,6 +173,17 @@ You will be asked to type **`YES`** to confirm charges (an estimated API call co
 - That estimate is **not a dollar price quote**. Your bill depends on **tokens used** and **xAI’s current pricing** (see [console.x.ai](https://console.x.ai)).
 - Skip the prompt only if you accept charges in scripts: add `-y` / `--yes`
 - Non-interactive sessions **refuse** live mode without `--yes` (use `--dry-run` instead)
+
+**Live + local notes** (still only *your* files for retrieval; **topic + snippets go to xAI**).  
+Requires `--corpus` and/or `--source`:
+
+```bash
+hypothesis-engine --retrieve --corpus ~/hypothesis-corpus/text \
+  -n 1 "photosynthesis efficiency"
+# scripts (after you accept cost): add -y
+```
+
+If nothing matches: no Sources table, `retrieval_status=empty`, background stays model-only (no mock fill in live).
 
 **After you type YES — please wait:**
 
@@ -326,23 +375,6 @@ Optional env overrides:
 
 Live users must follow [xAI’s terms](https://x.ai/legal/terms-of-service) and [Acceptable Use Policy](https://x.ai/legal/acceptable-use-policy).
 
-## Optional local library (RAG v0 — privacy-first)
-
-Background can be grounded on **your** local `.txt` / `.md` files with `--retrieve`.  
-PDFs must be converted to text first. Full walkthrough:
-
-→ **[docs/local-corpus.md](docs/local-corpus.md)** — build a private reservoir, convert PDFs, run `--corpus` / `--source`
-
-Quick dry-run example:
-
-```bash
-mkdir -p ~/hypothesis-corpus/text
-echo "Your notes about the topic…" > ~/hypothesis-corpus/text/notes.md
-hypothesis-engine --dry-run --retrieve --corpus ~/hypothesis-corpus/text -n 1 "your topic"
-```
-
-This is **not** a web literature search. Live mode still sends topic + snippets to xAI.
-
 ## What the pipeline does
 
 1. **Background brief** — model knowledge by default; optional **local-file** retrieval (`--retrieve`)
@@ -350,6 +382,8 @@ This is **not** a web literature search. Live mode still sends topic + snippets 
 3. **Verify** each adversarially (multi-check: consistency, testability, confounds, prior_knowledge)
 4. **Suggest tests** (richer fields + falsification criteria)
 5. Print a readable report and optional JSON
+
+Deep dive on building a private note/PDF library: **[docs/local-corpus.md](docs/local-corpus.md)**.
 
 ## Tests
 

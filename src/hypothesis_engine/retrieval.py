@@ -58,7 +58,11 @@ def retrieve_local(
         )
 
     scored.sort(key=lambda pair: (-pair[0], pair[1].title.lower()))
-    top = [p for _, p in scored[:k]]
+    # Drop score==0 (no topic-token overlap). Prefer empty over irrelevant filler.
+    positive = [(s, p) for s, p in scored if s > 0]
+    if not positive:
+        return []
+    top = [p for _, p in positive[:k]]
     # Re-number ids in rank order for stable prompt references
     for i, passage in enumerate(top, start=1):
         passage.id = f"S{i}"

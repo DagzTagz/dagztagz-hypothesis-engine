@@ -697,8 +697,9 @@ def _mock_bundle(
             k=retrieve_k,
         )
         if not passages:
+            # Demo fill only — not a real local hit (see meta.retrieval_status).
             passages = mock_passages(topic, k=min(2, retrieve_k))
-            retrieval_status = "ok"  # mock fill for dry-run demo
+            retrieval_status = "ok_mock"
         else:
             retrieval_status = "ok"
 

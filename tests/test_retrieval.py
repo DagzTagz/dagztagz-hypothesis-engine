@@ -39,6 +39,42 @@ def test_retrieve_local_empty_dir(tmp_path: Path):
     assert retrieve_local("anything", corpus_dirs=[empty], k=3) == []
 
 
+def test_retrieve_local_drops_zero_score_files(tmp_path: Path):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "on-topic.md").write_text(
+        "Coral bleaching increases with sea surface temperature.",
+        encoding="utf-8",
+    )
+    (notes / "bread.md").write_text(
+        "Sourdough starter needs flour water and time.",
+        encoding="utf-8",
+    )
+    hits = retrieve_local(
+        "coral bleaching temperature",
+        corpus_dirs=[notes],
+        k=5,
+    )
+    titles = [h.title for h in hits]
+    assert "on-topic.md" in titles
+    assert "bread.md" not in titles
+
+
+def test_retrieve_local_all_zero_score_returns_empty(tmp_path: Path):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "bread.md").write_text(
+        "Sourdough starter needs flour water and time.",
+        encoding="utf-8",
+    )
+    hits = retrieve_local(
+        "coral bleaching temperature",
+        corpus_dirs=[notes],
+        k=5,
+    )
+    assert hits == []
+
+
 def test_mock_passages_deterministic():
     a = mock_passages("topic x", k=2)
     b = mock_passages("topic x", k=2)
@@ -51,7 +87,9 @@ def test_dry_run_retrieve_without_files_uses_mock():
     bundle = run_workflow("quantum dots", n_hypotheses=1, dry_run=True, retrieve=True)
     assert bundle.meta["retrieval"] == RETRIEVAL_SCHEMA
     assert bundle.meta["n_passages"] >= 1
-    assert bundle.background.sources
+    assert bundle.meta["retrieval_status"] == "ok_mock"
+    assert bundle.meta["retrieval_backend"] == "mock"
+    assert all(s.backend == "mock" for s in bundle.background.sources)
     assert bundle.background.grounding in {"mixed", "retrieved", "model_only"}
 
 

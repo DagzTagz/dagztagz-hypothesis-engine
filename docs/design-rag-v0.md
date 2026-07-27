@@ -80,9 +80,10 @@ xAI call count unchanged (`2+2N`); local I/O is extra free work on disk.
 | Case | Behavior |
 |------|----------|
 | Retrieve off | Identical to pre-0.3 (sources empty, grounding model_only) |
-| Retrieve on, zero usable files / zero score | Empty passages; background model-only + limitation text; `retrieval_status=empty` |
+| Retrieve on, zero usable files / zero score (live) | Empty passages; background model-only + limitation text; `retrieval_status=empty` |
+| Dry-run, zero usable files | Synthetic mock passages; `retrieval_status=ok_mock`, `retrieval_backend=mock` (demo only) |
 | Unreadable file | Skip file; continue |
-| Dry-run, no files | Mock passages |
+| Dry-run, no files | Same as zero usable: mock + `ok_mock` |
 
 ## Later (not v0)
 
