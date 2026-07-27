@@ -1,78 +1,154 @@
-# Local library for retrieval (RAG v0)
+# Your private notes library (local retrieval)
 
-Use **your files** to ground the **background** step. Privacy-first: **no remote paper API**, no automatic web search.
+This guide shows how to give **DagzTagz Hypothesis Engine** a folder of **your own notes** so the **background** step can use them.
 
-> **Not a finished product** and **not** a full literature review.
-
-Also see: [getting-started.md](../getting-started.md) · [design-rag-v0.md](design-rag-v0.md)
+You do **not** need this for a normal dry-run or live run. It is **optional**.
 
 ---
 
-## What works in v0
+## Plain English: what this is
 
-| Supported | Not supported |
-|-----------|----------------|
-| `.txt`, `.md`, `.markdown` | Raw `.pdf` (convert first) |
-| `--corpus DIR` (files **directly** in that folder) | Nested subfolders |
-| `--source FILE` (repeatable) | URLs / OpenAlex / “search the web” |
+| Without local notes | With local notes (`--retrieve`) |
+|---------------------|----------------------------------|
+| Background comes only from the AI’s built-in knowledge | Background can also use text from **files on your computer** |
+| Nothing is read from a library folder | Only files **you** point at are read |
 
-Keep private notes **outside** the git clone when you can.  
-In-repo names `hypothesis-corpus/`, `corpus/`, `local-corpus/`, `my_notes/` are **gitignored**.
+Important limits (so expectations stay honest):
+
+- This is **not** searching Google or PubMed.
+- This is **not** a full literature review.
+- The engine only reads **`.txt` and `.md` files** (not PDF binaries — convert PDFs first; see below).
+- Files must share some **words with your topic**, or they are skipped.
+- Prefer keeping your library **outside** the git repo (example: `~/hypothesis-corpus`).
+
+Full install / first run: [getting-started.md](../getting-started.md).
 
 ---
 
-## Quick path (notes only)
+## The folder you’ll use
+
+Think of one place on your machine for “stuff the engine can read”:
+
+```text
+~/hypothesis-corpus/
+  text/     ← put .txt and .md notes HERE (this is what --corpus points at)
+  pdfs/     ← optional: store original PDFs here (engine ignores them until converted)
+```
+
+On this machine that is:
+
+```text
+/home/YOUR_USERNAME/hypothesis-corpus/text
+```
+
+(or `~/hypothesis-corpus/text` — same thing)
+
+You can use any path you like; the examples below use `~/hypothesis-corpus`.
+
+---
+
+## Setup in 4 steps (first time)
+
+Do these in order.
+
+### Step 1 — Open a terminal in the engine project
 
 ```bash
-# 0) engine ready
 cd ~/dagztagz-hypothesis-engine
 source .venv/bin/activate
+```
 
-# 1) library folders
-mkdir -p ~/hypothesis-corpus/pdfs
+(If you have not installed yet, follow [getting-started.md](../getting-started.md) first.)
+
+### Step 2 — Create the library folders
+
+```bash
 mkdir -p ~/hypothesis-corpus/text
+mkdir -p ~/hypothesis-corpus/pdfs
+```
 
-# 2) add a note that uses words from your topic
-echo "Coral bleaching increases with sea surface temperature stress." \
-  > ~/hypothesis-corpus/text/coral-notes.md
+### Step 3 — Add a simple note
 
-# 3) free dry-run with retrieval
+Write a short note that uses words from the topic you care about.  
+Example for a photosynthesis topic:
+
+```bash
+echo "Chlorophyll absorbs light. Photosynthesis efficiency depends on the light spectrum." \
+  > ~/hypothesis-corpus/text/notes.md
+```
+
+Or open an editor and write more:
+
+```bash
+nano ~/hypothesis-corpus/text/notes.md
+```
+
+Save as **`.md` or `.txt`** inside **`~/hypothesis-corpus/text`**  
+(not inside nested subfolders for v0 — only files sitting directly in `text/`).
+
+### Step 4 — Run a free test (dry-run + retrieve)
+
+```bash
 hypothesis-engine --dry-run --retrieve \
   --corpus ~/hypothesis-corpus/text \
   -n 1 \
-  "coral bleaching temperature"
+  "photosynthesis efficiency"
 ```
 
-**Check real hit vs dry-run mock:**
+What those pieces mean:
+
+| Piece | Meaning |
+|--------|---------|
+| `--dry-run` | Free demo, **no** xAI charges |
+| `--retrieve` | “Please look at my local notes” |
+| `--corpus ~/hypothesis-corpus/text` | “Look in this folder” |
+| `-n 1` | One hypothesis (faster to read) |
+| `"photosynthesis efficiency"` | Your topic — put words that appear in your notes |
+
+You should see a **Sources** table. If it lists **`notes.md`** and **Backend: local**, it worked.
+
+---
+
+## Did it use my notes?
+
+### Easy check (look at the screen)
+
+| What you see under Sources | What it means |
+|----------------------------|----------------|
+| Your filename (e.g. `notes.md`) and **Backend: local** | Yes — your file matched the topic |
+| Names like **`mock-notes-…`** and **Backend: mock** | No real match — dry-run showed a **demo** source so the UI still works |
+| No Sources table (live mode) | No match — background used AI knowledge only |
+
+### Optional nerdy check (JSON)
 
 ```bash
 hypothesis-engine --dry-run --json-only --retrieve \
   --corpus ~/hypothesis-corpus/text \
-  -n 1 "coral bleaching temperature" \
-  | python -c "import json,sys; d=json.load(sys.stdin); print(d['meta'].get('retrieval_status'), d['meta'].get('retrieval_backend')); print([(s['title'], s['backend']) for s in d['background']['sources']])"
+  -n 1 "photosynthesis efficiency" \
+  | python -c "import json,sys; d=json.load(sys.stdin); print('status:', d['meta'].get('retrieval_status')); print('backend:', d['meta'].get('retrieval_backend')); print('files:', [s['title'] for s in d['background']['sources']])"
 ```
 
-| Result | Meaning |
-|--------|---------|
-| `ok` + `local` + your filename | Keyword match — your file was used |
-| `ok_mock` + `mock` + `mock-…` | No usable match; dry-run filled demo sources |
-| Live only: `empty` | No match; no Sources table; model-only background |
+| Printed status | Meaning |
+|----------------|---------|
+| `ok` + `local` | Real local hits |
+| `ok_mock` + `mock` | Dry-run placeholders (no real match) |
+| `empty` (live) | No match, no placeholders |
+
+**If you only get mocks:** put more of your topic words in the note file, then run the same command again.
 
 ---
 
-## Configuration & optionality (step by step)
+## Common ways to run it
 
-### A — Retrieval off (default)
+### Just the app — no library (default)
 
 ```bash
 hypothesis-engine --dry-run -n 1 "your topic"
-# live:
-# hypothesis-engine -n 1 "your topic"
 ```
 
-No local files read. Background = model knowledge only.
+No files are read.
 
-### B — Retrieval on + one folder
+### Whole notes folder (most common)
 
 ```bash
 hypothesis-engine --dry-run --retrieve \
@@ -80,101 +156,77 @@ hypothesis-engine --dry-run --retrieve \
   -n 1 "your topic"
 ```
 
-- Scans **only top-level** `.txt`/`.md` in that directory  
-- Keeps up to **5** passages by default  
-- Files with **no topic-word overlap** are dropped (score 0)
-
-### C — Specific files only
+### Only certain files
 
 ```bash
 hypothesis-engine --dry-run --retrieve \
-  --source ~/hypothesis-corpus/text/coral-notes.md \
+  --source ~/hypothesis-corpus/text/notes.md \
   --source ~/hypothesis-corpus/text/methods.md \
   -n 1 "your topic"
 ```
 
-### D — Folder + extra files + more hits
+### Folder + one extra file + more hits
 
 ```bash
 hypothesis-engine --dry-run --retrieve \
   --corpus ~/hypothesis-corpus/text \
-  --source ~/Desktop/extra-note.md \
+  --source ~/Desktop/extra.md \
   --retrieve-k 8 \
-  -n 2 "your topic"
+  -n 1 "your topic"
 ```
 
-| Flag | Optional? | Role |
-|------|-----------|------|
-| `--retrieve` | required to enable | Turns local retrieval on |
-| `--corpus DIR` | optional* | Directory of notes (repeatable) |
-| `--source FILE` | optional* | One file (repeatable) |
-| `--retrieve-k N` | optional | Max passages, **1–10** (default **5**) |
-| `--dry-run` | optional | Free, no xAI |
-| `-n 1..5` | optional | Hypothesis count (default 2) |
-| `-o out.json` | optional | Write full JSON (owner-only mode when possible) |
-| `--json-only` | optional | JSON on stdout (good for scripts) |
+`--retrieve-k 8` means “keep up to 8 matching notes” (default is 5; max 10).
 
-\*Live + `--retrieve` needs **at least one** `--corpus` or `--source`.  
-Dry-run may omit both and will use **mock** sources (`ok_mock`).
+### Live mode with your library (costs money)
 
-### E — Live + library (costs money)
+Only after dry-run looks good. You need a real xAI key (see getting-started).
 
 ```bash
-# interactive YES prompt
 hypothesis-engine --retrieve \
   --corpus ~/hypothesis-corpus/text \
   -n 1 "your topic"
-
-# non-interactive (only if you accept xAI charges)
-hypothesis-engine -y --retrieve \
-  --corpus ~/hypothesis-corpus/text \
-  -n 1 "your topic"
 ```
 
-- Retrieval still uses **only local files**  
-- **Topic + chosen snippets** are sent to **xAI** in live mode  
-- No match → `retrieval_status=empty` (no mock sources)
+Type **YES** when asked (or use `-y` only if you accept charges).
 
-### F — JSON / scripting
+**Live rules:**
 
-```bash
-hypothesis-engine --dry-run --json-only --retrieve \
-  --corpus ~/hypothesis-corpus/text \
-  -n 1 "your topic" -o /tmp/he-out.json
-
-# key fields
-python -c "import json; d=json.load(open('/tmp/he-out.json')); print(d['meta']['retrieval_status'], d['meta']['n_passages']); print(d['background']['grounding'])"
-```
+- You **must** pass `--corpus` and/or `--source` (unlike dry-run).
+- Retrieval still only reads **local** files.
+- Your **topic and short snippets** from matching files still go to **xAI**.
+- If nothing matches: no Sources table, status `empty` — no fake mock papers.
 
 ---
 
-## Add PDFs to the library
+## Adding PDFs (optional)
 
-Engine does **not** read PDF binary in v0. Convert → `text/`.
+The engine **cannot** open PDF files directly yet.  
+Store PDFs if you want, then convert them to text in `text/`.
 
-### 1. Save PDFs
+### 1. Put PDFs in the pdfs folder
 
 ```bash
 mkdir -p ~/hypothesis-corpus/pdfs
-# download or copy papers into pdfs/ (only material you may keep)
+# copy or download papers into that folder (only files you may keep)
 ```
 
-### 2. Install converter (Linux example)
+### 2. Install a converter (Linux)
 
 ```bash
-# Debian/Ubuntu
-sudo apt install poppler-utils   # provides pdftotext
+sudo apt install poppler-utils
 ```
 
-### 3. Convert one file
+That installs the `pdftotext` command.
+
+### 3. Convert one PDF
 
 ```bash
 pdftotext -layout \
-  ~/hypothesis-corpus/pdfs/smith2020.pdf \
-  ~/hypothesis-corpus/text/smith2020.txt
+  ~/hypothesis-corpus/pdfs/my-paper.pdf \
+  ~/hypothesis-corpus/text/my-paper.txt
 ```
 
-### 4. Convert a whole folder
+### 4. Convert every PDF in the folder
 
 ```bash
 cd ~/hypothesis-corpus/pdfs
@@ -193,47 +245,38 @@ hypothesis-engine --dry-run --retrieve \
   -n 1 "your scientific topic"
 ```
 
-No `pdftotext`? Open the PDF → copy text → save as `~/hypothesis-corpus/text/name.md`.
+**No `pdftotext`?** Open the PDF → select all → copy → paste into  
+`~/hypothesis-corpus/text/my-paper.md` and save.
 
 ---
 
-## Suggested folder layout
+## Small flags cheat sheet
 
-```text
-~/hypothesis-corpus/
-  pdfs/          # originals (ignored by the engine)
-  text/          # ← point --corpus here
-    paper1.txt
-    lab-notes.md
-```
-
----
-
-## Flag cheat sheet
-
-| Flag | Meaning |
-|------|---------|
-| `--retrieve` | Enable local-file retrieval for background |
-| `--corpus DIR` | Non-recursive directory of `.txt`/`.md` |
-| `--source FILE` | Explicit file (repeatable) |
-| `--retrieve-k N` | Max passages (1–10, default 5) |
+| Flag | What it does | Required? |
+|------|----------------|-----------|
+| `--retrieve` | Turn on local notes | Yes, to use a library |
+| `--corpus FOLDER` | Use all `.txt`/`.md` in that folder | Need this **or** `--source` for live |
+| `--source FILE` | Use one file (can repeat) | Need this **or** `--corpus` for live |
+| `--retrieve-k N` | Max matches (1–10, default 5) | No |
+| `--dry-run` | Free test, no API bill | Recommended first |
+| `-n 1` | How many hypotheses | No (default 2) |
 
 ---
 
-## Limits (v0)
+## Tips that save frustration
 
-| Topic | Detail |
-|--------|--------|
-| Ranking | Keyword overlap with the topic (not embeddings) |
-| Zero score | File ignored if it shares **no** topic words |
-| Size / count | Oversized files skipped; scan cap applies |
-| Privacy | Retrieve is local; **live** still sends topic + snippets to xAI |
-| Secrets | Never put API keys in note files |
+1. **Put words from your topic inside the notes** — matching is simple keyword overlap, not magic AI search of your disk.  
+2. **Only top-level files in `text/`** — subfolders are ignored in v0.  
+3. **Don’t put secrets or API keys in note files.**  
+4. **Don’t commit your private library to GitHub** — keep it under `~/hypothesis-corpus` (outside the clone).  
+5. **Start with dry-run** every time you change the library.
 
 ---
 
-## Safety
+## Safety (short)
 
-- Prefer **`--dry-run`** while building the library  
-- Research aid only — not peer review or professional advice  
-- You are responsible for lawful use of PDFs and notes you store  
+- Research aid only — not peer review, medical, or legal advice.  
+- You are responsible for how you store and use PDFs and notes.  
+- Local retrieval does not replace careful science.
+
+When you are ready for the full app tour (install, live mode, audit log), go back to **[getting-started.md](../getting-started.md)**.
