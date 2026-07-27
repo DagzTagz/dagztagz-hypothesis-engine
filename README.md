@@ -1,5 +1,7 @@
 # DagzTagz Hypothesis Engine
 
+![DagzTagz Hypothesis Engine](docs/assets/dagztagz_hypothesis_banner.jpg)
+
 **An open-source, community-driven system for generating, verifying, and testing scientific hypotheses.**  
 **Powered by Grok (xAI)** — not an official xAI product.
 
