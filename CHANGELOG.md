@@ -9,6 +9,34 @@ Versions follow [Semantic Versioning](https://semver.org/) while pre-1.0 (`0.x` 
 
 ---
 
+## [0.3.1] — 2026-07-28 — local retrieval upgrade + formal 0.3 line
+
+Builds on RAG v0 for real paper libraries. Still **local only** — not a web literature review.
+
+### Added / improved
+
+- **Chunking** of long notes so a full paper can contribute multiple scored passages
+- **Recursive corpus walk** (depth-limited) under `--corpus`
+- **Optional PDF text extract** via `pip install 'dagztagz-hypothesis-engine[pdf]'` (`pypdf`); corrupt PDFs are skipped
+- **Clearer Sources table**: title, score, short path, snippet; retrieval status line
+- **Privacy paths**: source `identifier` rewrites home to `~/…` by default; `--retrieve-full-paths` for absolutes
+- **PDF skip warnings** on progress (filename + reason; no home paths)
+- **Symlink jail**: corpus walk skips paths that resolve outside the corpus root (warn by basename)
+- **Audit log**: `retrieve` true/false on events; `n_passages` on complete (no snippets/paths)
+- **Live disclosure**: stronger cost-panel wording when `--retrieve` is on (topic + matched snippets leave the machine)
+- Schema tag: `meta.retrieval = rag_v0_1_local`
+
+### Docs / release
+
+- User guide remains [docs/local-corpus.md](docs/local-corpus.md)
+- Package version **0.3.1** (GitHub Release targets this line)
+
+### Privacy
+
+- Unchanged: no remote paper API; live mode still sends topic + snippets to xAI
+
+---
+
 ## [0.3.0] — 2026-07-26 — RAG v0 (local files only)
 
 Privacy-first optional retrieval for the **background** step. **Not** a web literature search.

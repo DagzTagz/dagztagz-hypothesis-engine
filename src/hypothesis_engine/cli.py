@@ -57,8 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--retrieve",
         action="store_true",
         help=(
-            "Opt-in local-file retrieval for background (RAG v0, privacy-first). "
-            "Requires --corpus and/or --source (dry-run may use mock passages)."
+            "Opt-in local-file retrieval for background (privacy-first). "
+            "Requires --corpus and/or --source (dry-run may use mock passages). "
+            "Supports .txt/.md; PDF needs: pip install '.[pdf]'."
         ),
     )
     parser.add_argument(
@@ -67,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         metavar="DIR",
-        help="Directory of .txt/.md files to search (non-recursive; repeatable)",
+        help="Directory to search recursively for .txt/.md/.pdf (repeatable)",
     )
     parser.add_argument(
         "--source",
@@ -75,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         metavar="FILE",
-        help="Local .txt/.md file to include in retrieval (repeatable)",
+        help="Local .txt/.md/.pdf file to include (repeatable)",
     )
     parser.add_argument(
         "--retrieve-k",
@@ -83,6 +84,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=5,
         metavar="K",
         help="Max local passages to keep when --retrieve is set (1-10, default 5)",
+    )
+    parser.add_argument(
+        "--retrieve-full-paths",
+        action="store_true",
+        help=(
+            "Keep absolute paths in source identifiers (default rewrites your "
+            "home directory to ~/… for safer JSON/logs)"
+        ),
     )
     parser.add_argument(
         "-y",
@@ -133,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     corpus_dirs = list(args.corpus or [])
     source_files = list(args.source or [])
     retrieve_k = max(1, min(10, int(args.retrieve_k)))
+    retrieve_full_paths = bool(args.retrieve_full_paths)
     estimated = estimate_api_calls(n) if not dry_run else 0
 
     if retrieve and not dry_run and not corpus_dirs and not source_files:
@@ -172,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                     "dry_run": False,
                     "n_hypotheses": n,
                     "estimated_api_calls": estimated,
+                    "retrieve": retrieve,
                     **topic_fields,
                 },
             )
@@ -186,13 +197,17 @@ def main(argv: list[str] | None = None) -> int:
             "n_hypotheses": n,
             "estimated_api_calls": estimated,
             "version": __version__,
+            "retrieve": retrieve,
             **topic_fields,
         },
     )
 
     def _progress(message: str) -> None:
         # stderr so --json-only stdout stays clean
-        err.print(f"[cyan]…[/cyan] {message}")
+        if message.startswith("Warning:"):
+            err.print(f"[yellow]…[/yellow] {message}")
+        else:
+            err.print(f"[cyan]…[/cyan] {message}")
 
     try:
         bundle = run_workflow(
@@ -204,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
             corpus_dirs=corpus_dirs,
             source_files=source_files,
             retrieve_k=retrieve_k,
+            retrieve_full_paths=retrieve_full_paths,
         )
     except Exception as exc:  # noqa: BLE001 — CLI boundary
         message = _friendly_error(exc)
@@ -215,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
                 "dry_run": dry_run,
                 "error_type": type(exc).__name__,
                 "error": message,
+                "retrieve": retrieve,
                 **topic_fields,
             },
         )
@@ -227,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.output:
         _write_private_text(args.output, payload + "\n")
 
+    n_passages = int(bundle.meta.get("n_passages") or 0)
     _audit(
         args.audit_log,
         {
@@ -235,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
             "n_hypotheses": n,
             "hypothesis_ids": [h.id for h in bundle.hypotheses],
             "output": str(args.output) if args.output else None,
+            "retrieve": retrieve,
+            "n_passages": n_passages,
             **topic_fields,
         },
     )
@@ -295,10 +315,22 @@ def _confirm_live(
     retrieve_line = ""
     if retrieve:
         retrieve_line = (
-            "Local retrieval: [bold]on[/bold] (files scored on your machine; "
-            "snippets are still sent to the model with the topic).\n"
-            "Not a web literature search.\n"
+            "[bold yellow]Local retrieval: ON[/bold yellow]\n"
+            "• Matching is done [bold]on your machine[/bold] (your notes/PDFs).\n"
+            "• [bold]Privacy:[/bold] short [bold]snippets from matching files[/bold] "
+            "are sent to the model [bold]together with your topic[/bold].\n"
+            "• This is [bold]not[/bold] a web literature search "
+            "(no PubMed/Google; only paths you passed).\n"
+            "• Prefer [cyan]--dry-run --retrieve[/cyan] first if the notes are sensitive.\n"
         )
+    privacy_line = (
+        "Topics go to the API provider in live mode (not only local).\n"
+        if not retrieve
+        else (
+            "Your [bold]topic and any matched local snippets[/bold] leave this machine "
+            "for the model API in live mode.\n"
+        )
+    )
     console.print(
         Panel.fit(
             "[bold red]LIVE MODE — THIS CAN COST MONEY[/bold red]\n\n"
@@ -315,7 +347,7 @@ def _confirm_live(
             "Call count is only a rough estimate of how many API requests this run may make.\n\n"
             "Uses [bold]your[/bold] XAI_API_KEY and [bold]your[/bold] xAI credits.\n"
             "DagzTagz Hypothesis Engine does not pay for usage.\n"
-            "Topics go to the API provider in live mode (not only local).\n"
+            f"{privacy_line}"
             "Dry-run is free: [cyan]hypothesis-engine --dry-run \"…\"[/cyan]",
             title=f"Cost confirmation · v{__version__}",
             border_style="red",
@@ -507,17 +539,39 @@ def _print_human(console: Console, bundle: object) -> None:
         )
     sources = getattr(bundle.background, "sources", None) or []
     if sources:
-        src_table = Table(title="Local sources (RAG v0)", show_lines=False)
-        src_table.add_column("Id", style="bold")
-        src_table.add_column("Title")
-        src_table.add_column("Backend")
-        src_table.add_column("Score")
-        src_table.add_column("Snippet")
+        from hypothesis_engine.retrieval import short_path_for_display
+
+        src_table = Table(
+            title="Local sources (RAG — your files)",
+            show_lines=True,
+            show_header=True,
+        )
+        src_table.add_column("Id", style="bold", no_wrap=True)
+        src_table.add_column("Title", max_width=36)
+        src_table.add_column("Score", no_wrap=True)
+        src_table.add_column("Path", max_width=40)
+        src_table.add_column("Snippet", max_width=48)
         for s in sources:
-            score = "" if s.score is None else f"{s.score:.3f}"
-            snip = s.snippet if len(s.snippet) <= 120 else s.snippet[:119] + "…"
-            src_table.add_row(s.id, s.title, s.backend, score, snip)
+            score = "—" if s.score is None else f"{s.score:.2f}"
+            snip = s.snippet if len(s.snippet) <= 100 else s.snippet[:99] + "…"
+            path_disp = short_path_for_display(s.identifier)
+            backend_hint = f" [{s.backend}]" if s.backend != "local" else ""
+            src_table.add_row(
+                s.id,
+                f"{s.title}{backend_hint}",
+                score,
+                path_disp,
+                snip,
+            )
         console.print(src_table)
+        status = bundle.meta.get("retrieval_status", "")
+        backend = bundle.meta.get("retrieval_backend", "")
+        if status or backend:
+            console.print(
+                f"[dim]retrieval: status={status or '—'} · "
+                f"backend={backend or '—'} · "
+                f"n={bundle.meta.get('n_passages', len(sources))}[/dim]"
+            )
 
     for hyp in bundle.hypotheses:
         console.print(f"\n[bold cyan]{hyp.id}[/bold cyan]  {hyp.statement}")

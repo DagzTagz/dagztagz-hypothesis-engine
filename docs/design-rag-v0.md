@@ -1,7 +1,7 @@
 # Design: RAG v0 — local files only (privacy-first)
 
-**Status:** implementing with engine **0.3.0**  
-**Decision:** Option **A — local corpus / files only**. No literature API, no remote URL fetch in v0.
+**Status:** shipped **0.3.0**, upgraded **0.3.1** (chunking, recursive walk, optional PDF)  
+**Decision:** Option **A — local corpus / files only**. No literature API, no remote URL fetch.
 
 ---
 

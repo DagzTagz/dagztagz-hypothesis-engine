@@ -33,6 +33,29 @@ def test_live_refuses_noninteractive_without_yes(monkeypatch, capsys):
     assert "tokens" in err.lower() or "pricing" in err.lower() or "Not a price quote" in err
 
 
+def test_live_retrieve_shows_snippet_privacy_disclosure(monkeypatch, capsys, tmp_path: Path):
+    """R5: live + --retrieve must clearly disclose snippets leave the machine."""
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    note = tmp_path / "note.md"
+    note.write_text("mirror neurons and learning", encoding="utf-8")
+    code = main(
+        [
+            "--retrieve",
+            "--source",
+            str(note),
+            "-n",
+            "1",
+            "mirror neurons learning",
+        ]
+    )
+    assert code == 2  # refused without --yes in non-interactive
+    err = capsys.readouterr().err.lower()
+    assert "live mode" in err
+    assert "snippet" in err
+    assert "local" in err
+    assert "topic" in err
+
+
 def test_live_yes_reaches_missing_key(monkeypatch, capsys):
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
@@ -127,7 +150,7 @@ def test_cli_version_and_engine_meta(capsys):
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["meta"]["engine_version"] == __version__
-    assert __version__ == "0.3.0"
+    assert __version__ == "0.3.1"
 
 
 def test_cli_rejects_n_out_of_range():

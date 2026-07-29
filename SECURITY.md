@@ -10,7 +10,7 @@ This is a **DagzTagz** community project. It is **powered by Grok (xAI)** when u
 
 | Version / branch | Supported |
 |------------------|-----------|
-| `main` / latest tag (currently **0.3.x**) | Yes — security and privacy fixes land here |
+| `main` / latest tag (currently **0.3.1+**) | Yes — security and privacy fixes land here |
 | **0.1.x** and older checkouts / ZIPs | Please **upgrade** — see [Privacy notices for existing installs](#privacy-notices-for-existing-installs) |
 | Forks / unknown snapshots | Best-effort only; report against current `main` |
 

@@ -7,9 +7,9 @@ The goal of this project is to create a transparent, auditable AI tool that help
 
 This project is inspired by xAI’s mission to advance our understanding of the universe through maximally truth-seeking AI. Live model calls use the **xAI Grok API** under **your** account and terms.
 
-> **Current Status**: **v0.3.0** · **Phase 2** in progress.  
-> Shipping: multi-check, richer tests, owner-only outputs, polish (**0.2.1**), and **RAG v0 — local files only** (`--retrieve`, privacy-first; not a web literature search).  
-> Design: [docs/design-rag-v0.md](docs/design-rag-v0.md). **Not a finished product** — iterative, disclosed early.
+> **Current Status**: **v0.3.1** · **Phase 2** in progress.  
+> Shipping: multi-check, richer tests, owner-only outputs, and **local retrieval** (`--retrieve`: chunking, recursive folders, optional PDF via `.[pdf]`). Privacy-first — **not** a web literature search.  
+> Guide: [docs/local-corpus.md](docs/local-corpus.md). **Not a finished product** — iterative, disclosed early.
 
 ---
 
@@ -33,12 +33,11 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 - Structured output (hypothesis + verification + suggested tests)
 - Dry-run mode, live Grok API path, CI (pytest + ruff), optional local audit logging
 
-### Phase 2 — shipping now (v0.3.0)
+### Phase 2 — shipping now (v0.3.1)
 - **Multi-check verification** (`meta.verification = multi_check_v1`)
 - **Richer experiment suggestions** (`meta.tests = richer_tests_v1`)
 - **Local file privacy:** `-o` / `--audit-log` as owner-only (`0600`)
-- **0.2.1 polish:** soft-normalize, endpoint warning, `meta.engine_version`
-- **RAG v0 (local files only):** `--retrieve` + `--corpus` / `--source` grounds background on **your** `.txt`/`.md` notes. No remote paper API. Design: [docs/design-rag-v0.md](docs/design-rag-v0.md). **How to build a private library (incl. PDF → text):** [docs/local-corpus.md](docs/local-corpus.md)
+- **Local retrieval** (`meta.retrieval = rag_v0_1_local`): `--retrieve` + `--corpus` / `--source` — keyword match, **chunking**, **recursive** folders, optional **PDF** (`pip install '.[pdf]'`). No remote paper API. Guide: [docs/local-corpus.md](docs/local-corpus.md)
 
 **Note:** Still a **single workflow** (not multi-agent). Local retrieval is **not** a full literature review. History: **[CHANGELOG.md](CHANGELOG.md)**.
 

@@ -132,9 +132,10 @@ You can opt in to use **your own files** on disk (privacy-first — **not** a we
 | Need | Flag |
 |------|------|
 | Turn retrieval on | `--retrieve` |
-| Folder of notes | `--corpus DIR` (direct `.txt`/`.md` files only) |
+| Folder of notes | `--corpus DIR` (walks subfolders; `.txt`/`.md`/optional `.pdf`) |
 | Specific files | `--source FILE` (repeatable) |
 | How many hits | `--retrieve-k N` (1–10, default 5) |
+| PDF support | `pip install '.[pdf]'` then put `.pdf` in the corpus |
 
 **1 — free dry-run with a tiny note**
 

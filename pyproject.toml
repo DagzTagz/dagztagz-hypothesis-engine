@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dagztagz-hypothesis-engine"
-version = "0.3.0"
-description = "DagzTagz Hypothesis Engine — generate, multi-check verify, and suggest richer tests for scientific hypotheses (Phase 2, iterative). Powered by Grok (xAI)."
+version = "0.3.1"
+description = "DagzTagz Hypothesis Engine — generate, multi-check verify, richer tests, local-file retrieval (optional PDF). Powered by Grok (xAI)."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
@@ -34,10 +34,14 @@ dependencies = [
 audit = [
   "cryptography>=43.0.0",
 ]
+pdf = [
+  "pypdf>=5.0.0",
+]
 dev = [
   "pytest>=8.3.0",
   "ruff>=0.9.0",
   "cryptography>=43.0.0",
+  "pypdf>=5.0.0",
 ]
 
 [project.scripts]

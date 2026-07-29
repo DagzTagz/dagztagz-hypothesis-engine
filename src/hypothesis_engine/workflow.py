@@ -29,7 +29,7 @@ from hypothesis_engine.retrieval import mock_passages, retrieve_local
 # Schema tags for Phase 2 thin slices (still one API call per step type).
 VERIFICATION_SCHEMA = "multi_check_v1"
 TESTS_SCHEMA = "richer_tests_v1"
-RETRIEVAL_SCHEMA = "rag_v0_local"
+RETRIEVAL_SCHEMA = "rag_v0_1_local"
 
 # Soft caps so a runaway model reply cannot blow up memory/logs (polish / safety).
 _MAX_FIELD_CHARS = 4000
@@ -62,6 +62,7 @@ def run_workflow(
     corpus_dirs: list[Path] | None = None,
     source_files: list[Path] | None = None,
     retrieve_k: int = 5,
+    retrieve_full_paths: bool = False,
 ) -> HypothesisBundle:
     """Run the full pipeline for a topic (background → generate → verify → tests).
 
@@ -81,6 +82,8 @@ def run_workflow(
         Local paths for retrieval when retrieve=True.
     retrieve_k:
         Max passages to keep (1–10).
+    retrieve_full_paths:
+        If True, keep absolute paths in source identifiers (default rewrites home → ~).
     """
     topic = topic.strip()
     if not topic:
@@ -106,6 +109,7 @@ def run_workflow(
             corpus_dirs=corpus_dirs,
             source_files=source_files,
             retrieve_k=retrieve_k,
+            retrieve_full_paths=retrieve_full_paths,
         )
 
     client = client or build_client(settings)
@@ -120,14 +124,20 @@ def run_workflow(
 
     passages: list[RetrievedPassage] = []
     retrieval_status = "skipped"
+    retrieval_warnings: list[str] = []
     if retrieve:
         _progress("Local retrieval: scoring your files (no remote search)…")
-        passages = retrieve_local(
+        result = retrieve_local(
             topic,
             corpus_dirs=corpus_dirs,
             source_files=source_files,
             k=retrieve_k,
+            full_paths=retrieve_full_paths,
         )
+        passages = result.passages
+        retrieval_warnings = list(result.warnings)
+        for warn in retrieval_warnings:
+            _progress(f"Warning: {warn}")
         retrieval_status = "ok" if passages else "empty"
         _progress(f"Local retrieval done ({len(passages)} passage(s)).")
 
@@ -173,6 +183,9 @@ def run_workflow(
         "retrieval_status": retrieval_status if retrieve else "skipped",
         "n_passages": len(passages) if retrieve else 0,
     }
+    if retrieve and retrieval_warnings:
+        # Filenames only in warnings — no home-directory paths.
+        meta["retrieval_warnings"] = retrieval_warnings[:20]
     return HypothesisBundle(
         topic=topic,
         background=background,
@@ -685,17 +698,22 @@ def _mock_bundle(
     corpus_dirs: list[Path] | None = None,
     source_files: list[Path] | None = None,
     retrieve_k: int = 5,
+    retrieve_full_paths: bool = False,
 ) -> HypothesisBundle:
     """Deterministic offline output for demos and tests (no network)."""
     passages: list[RetrievedPassage] = []
     retrieval_status = "skipped"
+    retrieval_warnings: list[str] = []
     if retrieve:
-        passages = retrieve_local(
+        result = retrieve_local(
             topic,
             corpus_dirs=corpus_dirs or [],
             source_files=source_files or [],
             k=retrieve_k,
+            full_paths=retrieve_full_paths,
         )
+        passages = result.passages
+        retrieval_warnings = list(result.warnings)
         if not passages:
             # Demo fill only — not a real local hit (see meta.retrieval_status).
             passages = mock_passages(topic, k=min(2, retrieve_k))
@@ -778,6 +796,11 @@ def _mock_bundle(
             "n_passages": len(passages) if retrieve else 0,
             "background_mode": (
                 "local_retrieval+model" if retrieve and passages else "model_knowledge_only"
+            ),
+            **(
+                {"retrieval_warnings": retrieval_warnings[:20]}
+                if retrieve and retrieval_warnings
+                else {}
             ),
         },
     )
