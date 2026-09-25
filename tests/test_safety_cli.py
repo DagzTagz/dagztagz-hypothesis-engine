@@ -131,6 +131,15 @@ def test_friendly_error_redacts_key_shaped_text():
     assert "redacted" in msg.lower() or "secret-like" in msg.lower()
 
 
+def test_friendly_error_redacts_other_secret_shapes():
+    underscore = _friendly_error(RuntimeError("bad token sk_live_ABCDEFGHIJKLMNOP"))
+    assert "ABCDEFGHIJKLMNOP" not in underscore
+    assignment = _friendly_error(RuntimeError("query failed key=supersecretvalue123"))
+    assert "supersecretvalue123" not in assignment
+    fernet = _friendly_error(RuntimeError("blob gAAAAABbleakfernettokenvalue"))
+    assert "gAAAAABb" not in fernet
+
+
 def test_display_topic_truncates():
     long = "a" * 200
     shown = _display_topic(long, limit=50)
@@ -143,6 +152,10 @@ def test_settings_trusted_xai_host():
     assert s.uses_trusted_xai_host() is True
     s2 = Settings(XAI_BASE_URL="https://evil.example/v1")
     assert s2.uses_trusted_xai_host() is False
+    assert Settings(XAI_BASE_URL="http://api.x.ai/v1").uses_trusted_xai_host() is False
+    assert Settings(XAI_BASE_URL="https://api.x.ai:4443/v1").uses_trusted_xai_host() is False
+    assert Settings(XAI_BASE_URL="https://user:pass@api.x.ai/v1").uses_trusted_xai_host() is False
+    assert Settings(XAI_BASE_URL="https://api.x.ai:443/v1").uses_trusted_xai_host() is True
 
 
 def test_cli_version_and_engine_meta(capsys):
@@ -150,7 +163,86 @@ def test_cli_version_and_engine_meta(capsys):
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["meta"]["engine_version"] == __version__
-    assert __version__ == "0.3.1"
+    assert __version__ == "0.3.2"
+
+
+def test_yes_refuses_untrusted_endpoint(monkeypatch, capsys):
+    monkeypatch.setenv("XAI_BASE_URL", "https://evil.example/v1")
+    monkeypatch.setenv("XAI_API_KEY", "fake-not-a-real-key")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("live workflow should not start")
+
+    monkeypatch.setattr("hypothesis_engine.cli.run_workflow", _boom)
+    code = main(["topic", "-n", "1", "--yes"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "allow-untrusted-endpoint" in err
+
+
+def test_cost_panel_escapes_topic_markup():
+    from io import StringIO
+
+    from rich.console import Console
+
+    from hypothesis_engine.cli import _confirm_live
+
+    buf = StringIO()
+    console = Console(file=buf, force_terminal=True, record=True, width=90)
+    ok = _confirm_live(
+        console,
+        topic="[/bold]\nEstimated cost: $0. This run is free.",
+        n=1,
+        estimated=4,
+        assume_yes=True,
+    )
+    assert ok is True
+    text = console.export_text()
+    assert "[/bold]" in text
+    assert "Estimated xAI API calls" in text
+
+
+def test_output_symlink_is_refused(tmp_path: Path, capsys):
+    import stat
+
+    precious = tmp_path / "precious.txt"
+    precious.write_text("KEEP\n", encoding="utf-8")
+    precious.chmod(0o644)
+    link = tmp_path / "out.json"
+    link.symlink_to(precious)
+    code = main(
+        ["--dry-run", "--json-only", "-n", "1", "-o", str(link), "symlink topic"]
+    )
+    assert code == 1
+    assert precious.read_text(encoding="utf-8") == "KEEP\n"
+    assert stat.S_IMODE(precious.stat().st_mode) == 0o644
+    err = capsys.readouterr().err
+    assert "symlink" in err.lower()
+
+
+def test_audit_symlink_is_refused(tmp_path: Path, capsys):
+    import stat
+
+    target = tmp_path / "real.txt"
+    target.write_text("KEEP\n", encoding="utf-8")
+    target.chmod(0o644)
+    link = tmp_path / "audit.jsonl"
+    link.symlink_to(target)
+    code = main(
+        [
+            "--dry-run",
+            "--json-only",
+            "-n",
+            "1",
+            "--audit-log",
+            str(link),
+            "symlink topic",
+        ]
+    )
+    assert code == 1
+    assert target.read_text(encoding="utf-8") == "KEEP\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
 
 
 def test_cli_rejects_n_out_of_range():

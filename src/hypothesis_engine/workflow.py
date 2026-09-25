@@ -236,7 +236,9 @@ def _normalize_background(
     if not isinstance(data, dict):
         data = {}
     data = dict(data)
-    data.setdefault("topic", topic)
+    data["topic"] = _clip_text(data.get("topic") or topic, max_chars=2_000) or _clip_text(
+        topic, max_chars=2_000
+    )
     if "known_limitations" not in data or not data["known_limitations"]:
         data["known_limitations"] = [
             "Background is not a comprehensive literature search.",
@@ -261,19 +263,11 @@ def _normalize_background(
     else:
         data["sources"] = []
         data["grounding"] = "model_only"
-        if "summary" not in data:
-            data["summary"] = ""
-    # Soft lists
+    # Same soft caps as verify/tests. A runaway background reply is still
+    # model output and should not land unbounded in -o / the terminal.
     for key in ("key_concepts", "known_limitations", "caveats"):
-        val = data.get(key)
-        if val is None:
-            data[key] = []
-        elif isinstance(val, str):
-            data[key] = [val] if val.strip() else []
-        elif not isinstance(val, list):
-            data[key] = []
-    if not data.get("summary"):
-        data["summary"] = "No summary returned by the model."
+        data[key] = _clip_str_list(data.get(key))
+    data["summary"] = _clip_text(data.get("summary")) or "No summary returned by the model."
     return BackgroundBrief.model_validate(data)
 
 

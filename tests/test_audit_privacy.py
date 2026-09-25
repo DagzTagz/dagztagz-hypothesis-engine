@@ -38,8 +38,19 @@ def test_encrypt_and_decrypt_roundtrip():
     assert "topic" not in fields
     assert "topic_encrypted" in fields
     assert fields["topic_storage"] == "encrypted"
+    assert fields["topic_encrypted"].startswith("v2:")
     plain = decrypt_topic(fields["topic_encrypted"], "unit-test-passphrase-not-for-prod")
     assert plain == "secret topic"
+
+
+def test_legacy_fernet_token_still_decrypts():
+    """0.3.1 tokens are a raw Fernet string, not the v2 prefix."""
+    from hypothesis_engine.audit_crypto import fernet_from_secret
+
+    secret = "unit-test-passphrase-not-for-prod"
+    legacy = fernet_from_secret(secret).encrypt(b"legacy topic").decode("ascii")
+    assert not legacy.startswith("v2:")
+    assert decrypt_topic(legacy, secret) == "legacy topic"
 
 
 def test_plaintext_opt_in():

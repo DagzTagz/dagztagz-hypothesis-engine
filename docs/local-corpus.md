@@ -279,7 +279,7 @@ hypothesis-engine --dry-run --retrieve \
 6. **JSON paths default to `~/…`** (not full `/home/you/…`). Use `--retrieve-full-paths` only if you need absolutes.  
 7. **Start with dry-run** every time you change the library.  
 8. **Broken PDFs** (trailer/xref errors) won’t convert — re-download or paste text.  
-9. **Shortcuts (symlinks)** inside a corpus folder that point *outside* that folder are skipped (you’ll see a short warning).
+9. **Shortcuts (symlinks)** inside a corpus folder that point *outside* that folder are skipped (you’ll see a short warning). If the `--corpus` path itself is a symlink, the whole directory is skipped. `--source` still opens the file you named, and live mode shows where that path resolves.
 
 ---
 

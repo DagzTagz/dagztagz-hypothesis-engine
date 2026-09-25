@@ -5,6 +5,7 @@ Supports text/markdown, optional PDF (pypdf), recursive corpus walk, and chunkin
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +17,8 @@ _PDF_SUFFIXES = frozenset({".pdf"})
 _MAX_FILE_BYTES = 2 * 1024 * 1024  # 2 MiB (chunked after read)
 _MAX_FILES_SCANNED = 120
 _MAX_WALK_DEPTH = 4  # corpus root = depth 0
+_MAX_PDF_PAGES = 30
+_MAX_PDF_CHARS = 200_000
 _MAX_SNIPPET_CHARS = 1200
 _CHUNK_CHARS = 1800
 _CHUNK_OVERLAP = 200
@@ -203,6 +206,11 @@ def _collect_paths(
 
     for raw_dir in corpus_dirs:
         directory = Path(raw_dir).expanduser()
+        # A directory symlink would make resolve() the jail root and read the
+        # target. Skip it instead of widening the corpus.
+        if directory.is_symlink():
+            warnings.append(f"Skipped corpus directory that is a symlink: {directory.name}")
+            continue
         if not directory.is_dir():
             continue
         try:
@@ -210,7 +218,7 @@ def _collect_paths(
         except OSError:
             root_resolved = directory
         try:
-            for path in sorted(directory.rglob("*"), key=lambda p: str(p).lower()):
+            for path in _iter_corpus_files(directory, root_resolved):
                 if len(found) >= _MAX_FILES_SCANNED:
                     break
                 if not path.is_file() and not path.is_symlink():
@@ -223,21 +231,40 @@ def _collect_paths(
                     continue
                 if not path.is_file():
                     continue
-                try:
-                    rel = path.resolve().relative_to(root_resolved)
-                    depth = len(rel.parts) - 1  # file in root → 0
-                except (OSError, ValueError):
-                    warnings.append(
-                        f"Skipped path outside corpus (possible symlink): {path.name}"
-                    )
-                    continue
-                if depth > _MAX_WALK_DEPTH:
-                    continue
                 _add(path)
         except OSError:
             continue
 
     return found[:_MAX_FILES_SCANNED], warnings
+
+
+def _iter_corpus_files(directory: Path, root_resolved: Path):
+    """Yield candidate files without listing the tree past the depth cap.
+
+    ``os.walk`` prunes subdirectories once they would exceed
+    ``_MAX_WALK_DEPTH`` and does not follow directory symlinks.
+    """
+    for dirpath, dirnames, filenames in os.walk(directory, followlinks=False):
+        current = Path(dirpath)
+        try:
+            rel_dir = current.resolve().relative_to(root_resolved)
+        except (OSError, ValueError):
+            dirnames.clear()
+            continue
+        dir_depth = len(rel_dir.parts)  # corpus root → 0
+        if dir_depth > _MAX_WALK_DEPTH:
+            dirnames.clear()
+            continue
+        kept: list[str] = []
+        for name in sorted(dirnames, key=str.lower):
+            child = current / name
+            # File depth of a child directory's files is dir_depth + 1.
+            if child.is_symlink() or dir_depth >= _MAX_WALK_DEPTH:
+                continue
+            kept.append(name)
+        dirnames[:] = kept
+        for name in sorted(filenames, key=str.lower):
+            yield current / name
 
 
 def _read_document_with_status(path: Path) -> tuple[str, str | None]:
@@ -286,20 +313,39 @@ def _read_pdf_with_status(path: Path) -> tuple[str, str | None]:
                 reader.decrypt("")  # type: ignore[attr-defined]
             except Exception:  # noqa: BLE001
                 return "", "encrypted or locked"
-        parts: list[str] = []
-        for page in reader.pages:
-            try:
-                t = page.extract_text() or ""
-            except Exception:  # noqa: BLE001 — skip bad pages
-                t = ""
-            if t.strip():
-                parts.append(t)
-        text = "\n\n".join(parts).strip()
+        text = _extract_pdf_text(reader)
         if not text:
             return "", "no extractable text (corrupt, scanned, or empty)"
         return text, None
     except Exception:  # noqa: BLE001 — corrupt PDF
         return "", "unreadable or corrupt"
+
+
+def _extract_pdf_text(reader: object) -> str:
+    """Extract text with a page cap and a character cap.
+
+    A small PDF can expand into a very large string. Stop early so scoring
+    cannot be fed an unbounded document.
+    """
+    pages = getattr(reader, "pages", ())
+    parts: list[str] = []
+    total = 0
+    for index, page in enumerate(pages):
+        if index >= _MAX_PDF_PAGES or total >= _MAX_PDF_CHARS:
+            break
+        try:
+            raw = page.extract_text() or ""
+        except Exception:  # noqa: BLE001 — skip bad pages
+            raw = ""
+        piece = raw.strip()
+        if not piece:
+            continue
+        room = _MAX_PDF_CHARS - total
+        if len(piece) > room:
+            piece = piece[:room]
+        parts.append(piece)
+        total += len(piece)
+    return "\n\n".join(parts).strip()
 
 
 def _chunk_text(text: str) -> list[str]:
