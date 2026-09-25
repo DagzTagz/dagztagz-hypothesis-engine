@@ -16,7 +16,8 @@ class LLMError(RuntimeError):
 
 
 # JSON allows \" \\ \/ \b \f \n \r \t \uXXXX — models often emit bare \path or \s etc.
-_INVALID_JSON_ESCAPE = re.compile(r'\\(?!["\\/bfnrtu])')
+_JSON_SIMPLE_ESCAPES = set('"\\/bfnrt')
+_JSON_HEX = set("0123456789abcdefABCDEF")
 
 
 def build_client(settings: Settings) -> OpenAI:
@@ -108,10 +109,85 @@ def _strip_fences(text: str) -> str:
 
 
 def _repair_json_text(s: str) -> str:
-    """Best-effort fixes for common LLM JSON mistakes."""
-    # Turn invalid \x sequences into \\x so json.loads accepts them as backslash + char
-    s = _INVALID_JSON_ESCAPE.sub(r"\\\\", s)
-    # Trailing commas
-    s = re.sub(r",\s*}", "}", s)
-    s = re.sub(r",\s*]", "]", s)
-    return s
+    """Best-effort fixes for common LLM JSON mistakes.
+
+    Backslash repair runs inside strings. Trailing commas are removed only
+    outside strings, so a value like ``"hello, }"`` is left intact.
+    """
+    return _strip_trailing_commas_outside_strings(_repair_invalid_escapes_in_strings(s))
+
+
+def _repair_invalid_escapes_in_strings(s: str) -> str:
+    """Turn invalid ``\\x`` sequences inside JSON strings into ``\\\\x``."""
+    out: list[str] = []
+    in_str = False
+    i = 0
+    n = len(s)
+    while i < n:
+        ch = s[i]
+        if not in_str:
+            out.append(ch)
+            if ch == '"':
+                in_str = True
+            i += 1
+            continue
+        if ch != "\\":
+            out.append(ch)
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        nxt = s[i + 1] if i + 1 < n else ""
+        if nxt in _JSON_SIMPLE_ESCAPES:
+            out.append(ch)
+            out.append(nxt)
+            i += 2
+            continue
+        if (
+            nxt == "u"
+            and i + 5 < n
+            and all(c in _JSON_HEX for c in s[i + 2 : i + 6])
+        ):
+            out.append(s[i : i + 6])
+            i += 6
+            continue
+        # Invalid or truncated escape: emit a literal backslash.
+        out.append("\\\\")
+        i += 1
+    return "".join(out)
+
+
+def _strip_trailing_commas_outside_strings(s: str) -> str:
+    """Drop commas that sit immediately before ``}`` or ``]`` outside strings."""
+    out: list[str] = []
+    in_str = False
+    escaped = False
+    i = 0
+    n = len(s)
+    while i < n:
+        ch = s[i]
+        if in_str:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == ",":
+            j = i + 1
+            while j < n and s[j] in " \t\r\n":
+                j += 1
+            if j < n and s[j] in "}]":
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)

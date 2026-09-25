@@ -7,7 +7,10 @@ from pathlib import Path
 
 from hypothesis_engine.cli import main
 from hypothesis_engine.retrieval import (
+    _MAX_PDF_CHARS,
+    _MAX_PDF_PAGES,
     _chunk_text,
+    _extract_pdf_text,
     mock_passages,
     pdf_support_available,
     privacy_path,
@@ -144,7 +147,7 @@ def test_cli_dry_run_retrieve_json(tmp_path: Path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["meta"]["retrieval"] == RETRIEVAL_SCHEMA
     assert data["background"]["sources"]
-    assert data["meta"]["engine_version"] == "0.3.1"
+    assert data["meta"]["engine_version"] == "0.3.2"
 
 
 def test_chunk_text_splits_long_docs():
@@ -290,6 +293,60 @@ def test_symlink_escape_outside_corpus_is_skipped(tmp_path: Path):
     assert any("real.md" in t for t in titles)
     assert any("outside corpus" in w.lower() or "symlink" in w.lower() for w in result.warnings)
     assert all("secret.md" not in w or "trap.md" in w for w in result.warnings)
+
+
+def test_corpus_directory_symlink_is_skipped(tmp_path: Path):
+    real = tmp_path / "real-notes"
+    real.mkdir()
+    (real / "secret.md").write_text(
+        "mirror neurons PRIVATE-HOME-MARKER should not be read via a corpus symlink.",
+        encoding="utf-8",
+    )
+    alias = tmp_path / "innocent"
+    alias.symlink_to(real, target_is_directory=True)
+    result = retrieve_local("mirror neurons", corpus_dirs=[alias], k=3)
+    blob = " ".join(p.snippet for p in result.passages)
+    assert "PRIVATE-HOME-MARKER" not in blob
+    assert result.passages == []
+    assert any("symlink" in w.lower() for w in result.warnings)
+
+
+def test_walk_stops_at_depth_cap(tmp_path: Path):
+    root = tmp_path / "root"
+    cur = root
+    for i in range(4):
+        cur = cur / f"d{i}"
+    cur.mkdir(parents=True)
+    (cur / "ok.md").write_text("mirror neurons depth four stays in range.", encoding="utf-8")
+    deeper = cur / "d4"
+    deeper.mkdir()
+    (deeper / "no.md").write_text("mirror neurons depth five is past the cap.", encoding="utf-8")
+    result = retrieve_local("mirror neurons depth", corpus_dirs=[root], k=5)
+    titles = [p.title for p in result.passages]
+    assert "ok.md" in titles
+    assert "no.md" not in titles
+
+
+def test_pdf_extract_caps_pages_and_chars():
+    class _Page:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def extract_text(self) -> str:
+            return self._text
+
+    class _Reader:
+        def __init__(self, pages: list[_Page]) -> None:
+            self.pages = pages
+
+    pages = [_Page(f"MARKER{i:02d}") for i in range(_MAX_PDF_PAGES + 5)]
+    text = _extract_pdf_text(_Reader(pages))
+    assert "MARKER00" in text
+    assert f"MARKER{_MAX_PDF_PAGES - 1:02d}" in text
+    assert f"MARKER{_MAX_PDF_PAGES:02d}" not in text
+
+    huge = _extract_pdf_text(_Reader([_Page("A" * (_MAX_PDF_CHARS + 50))]))
+    assert len(huge) == _MAX_PDF_CHARS
 
 
 def test_audit_includes_retrieve_and_n_passages(tmp_path: Path, capsys):

@@ -7,7 +7,7 @@ The goal of this project is to create a transparent, auditable AI tool that help
 
 This project is inspired by xAI’s mission to advance our understanding of the universe through maximally truth-seeking AI. Live model calls use the **xAI Grok API** under **your** account and terms.
 
-> **Current Status**: **v0.3.1** · **Phase 2** in progress.  
+> **Current Status**: **v0.3.2** · **Phase 2** in progress.  
 > Shipping: multi-check, richer tests, owner-only outputs, and **local retrieval** (`--retrieve`: chunking, recursive folders, optional PDF via `.[pdf]`). Privacy-first — **not** a web literature search.  
 > Guide: [docs/local-corpus.md](docs/local-corpus.md). **Not a finished product** — iterative, disclosed early.
 
@@ -33,7 +33,7 @@ The long-term vision is a multi-agent system that can assist with real scientifi
 - Structured output (hypothesis + verification + suggested tests)
 - Dry-run mode, live Grok API path, CI (pytest + ruff), optional local audit logging
 
-### Phase 2 — shipping now (v0.3.1)
+### Phase 2 — shipping now (v0.3.2)
 - **Multi-check verification** (`meta.verification = multi_check_v1`)
 - **Richer experiment suggestions** (`meta.tests = richer_tests_v1`)
 - **Local file privacy:** `-o` / `--audit-log` as owner-only (`0600`)

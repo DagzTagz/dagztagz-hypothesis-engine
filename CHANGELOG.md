@@ -9,6 +9,33 @@ Versions follow [Semantic Versioning](https://semver.org/) while pre-1.0 (`0.x` 
 
 ---
 
+## [0.3.2] — 2026-09-25 — security fixes from review
+
+Patch on the 0.3 line. No new science features. Live mode, local retrieval, and audit logs behave more tightly.
+
+### Fixed
+
+- **Output symlinks:** `-o` and `--audit-log` refuse a final-path symlink (`O_NOFOLLOW`) and `fchmod` the open file descriptor. They no longer truncate or re-permission the symlink target.
+- **API endpoint check:** trusted means `https://api.x.ai` on port 443 with no userinfo. `http://`, another port, or `user:pass@` keeps the warning. `--yes` alone will not send the key there; pass `--allow-untrusted-endpoint` as well when you mean to.
+- **Terminal markup:** topics, snippets, filenames, and model text are escaped before Rich renders them. Topic newlines in the cost panel are collapsed.
+- **Corpus root symlink:** `--corpus` skips a directory that is itself a symlink instead of jailing to the link target. File symlinks that point outside the root are still skipped. `--source` still follows links, and the cost panel shows the resolved path.
+- **Corpus walk:** depth and file caps prune the walk. They no longer list the whole tree first. PDF extract stops after 30 pages or 200,000 characters.
+- **Audit passphrase:** new `topic_encrypted` values use salted PBKDF2-HMAC-SHA256 (600,000 iterations) and a `v2:` prefix. Logs written by 0.3.1 and earlier still decrypt with the same `AUDIT_LOG_KEY`.
+- **Error text:** secret-shaped tokens (`sk-`, `sk_`, `xai-`, `gAAAAA`, `key=`, `bearer`) are redacted before stderr and the audit log.
+- **JSON repair:** trailing commas are removed only outside strings, so a string containing `, }` is not rewritten.
+- **Background brief:** summary and list fields use the same length caps as verification and tests.
+
+### Upgrade
+
+```bash
+git pull && pip install -e ".[dev]"
+hypothesis-engine --version   # 0.3.2
+```
+
+Existing `-o` / `--audit-log` files from before 0.2.0 can still be mode `0644`. This release does not widen who can read them. `chmod 600` those paths if an older run created them.
+
+---
+
 ## [0.3.1] — 2026-07-28 — local retrieval upgrade + formal 0.3 line
 
 Builds on RAG v0 for real paper libraries. Still **local only** — not a web literature review.

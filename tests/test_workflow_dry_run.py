@@ -11,6 +11,7 @@ from hypothesis_engine.models import REQUIRED_CHECK_IDS, CheckStatus, Confidence
 from hypothesis_engine.workflow import (
     TESTS_SCHEMA,
     VERIFICATION_SCHEMA,
+    _normalize_background,
     _normalize_checks,
     _normalize_suggested_test,
     _normalize_verification,
@@ -157,6 +158,24 @@ def test_parse_json_repairs_invalid_backslash_escape():
     data = parse_json_object(text)
     assert data["hypothesis_id"] == "H1"
     assert "notes" in data
+
+
+def test_parse_json_keeps_comma_brace_inside_string():
+    text = '{"a": "hello, }", "b": 1,}'
+    data = parse_json_object(text)
+    assert data["a"] == "hello, }"
+    assert data["b"] == 1
+
+
+def test_background_fields_are_clipped():
+    brief = _normalize_background(
+        {"summary": "A" * 20_000, "key_concepts": ["x" * 2_000] * 40, "topic": "t"},
+        topic="t",
+        passages=[],
+    )
+    assert len(brief.summary) <= 4_000
+    assert len(brief.key_concepts) <= 24
+    assert all(len(item) <= 500 for item in brief.key_concepts)
 
 
 def test_cli_dry_run_json(capsys):

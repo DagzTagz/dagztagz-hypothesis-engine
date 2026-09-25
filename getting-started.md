@@ -298,7 +298,7 @@ hypothesis-engine --dry-run "my topic" -n 1 --audit-log audit.jsonl
 cat audit.jsonl
 ```
 
-**Success looks like:** `"topic_storage": "encrypted"` and a `"topic_encrypted": "gAAAA..."` field.  
+**Success looks like:** `"topic_storage": "encrypted"` and a `"topic_encrypted"` field. New logs use a `v2:` prefix (a salted passphrase). Logs from 0.3.1 and earlier start with `gAAAA` and still decrypt with the same key.  
 **Hash-only** (`"topic_storage": "hash_only"`) means `AUDIT_LOG_KEY` was not set/loaded — fix `.env` and re-run.
 
 Optional quick checks (do **not** print your key):

@@ -10,7 +10,7 @@ This is a **DagzTagz** community project. It is **powered by Grok (xAI)** when u
 
 | Version / branch | Supported |
 |------------------|-----------|
-| `main` / latest tag (currently **0.3.1+**) | Yes — security and privacy fixes land here |
+| `main` / latest tag (currently **0.3.2+**) | Yes — security and privacy fixes land here |
 | **0.1.x** and older checkouts / ZIPs | Please **upgrade** — see [Privacy notices for existing installs](#privacy-notices-for-existing-installs) |
 | Forks / unknown snapshots | Best-effort only; report against current `main` |
 
@@ -125,6 +125,14 @@ This safe harbor does **not** cover attacks on infrastructure you do not own, sp
 ## Privacy notices for existing installs
 
 We use this section for **user-action** privacy fixes (local files, defaults). Product history lives in [CHANGELOG.md](CHANGELOG.md). This is **not** a claim of formal CVE process unless we publish a GitHub Security Advisory.
+
+### 0.3.2 — symlink outputs, endpoint check, audit KDF (2026-09-25)
+
+**Who should care:** Anyone who passes `-o` or `--audit-log` on a shared machine, who points `XAI_BASE_URL` at a non-default host, or who keeps `audit.jsonl` from 0.3.1 or earlier.
+
+**What changed:** output paths that are symlinks are refused. `--yes` will not send `XAI_API_KEY` unless the base URL is `https://api.x.ai` on port 443, or you also pass `--allow-untrusted-endpoint`. New encrypted audit tokens use a salted passphrase KDF (`v2:` prefix). Older tokens still decrypt with the same `AUDIT_LOG_KEY`.
+
+**If you already have older output files,** keep them owner-only (`chmod 600`). You do not need to rewrite old audit logs.
 
 ### 0.2.0 — owner-only permissions for `-o` and `--audit-log` (2026-07-23)
 

@@ -39,17 +39,39 @@ class Settings(BaseSettings):
             )
         return self.xai_api_key.strip()
 
+    def parsed_base_url(self):
+        """Parse XAI_BASE_URL. Returns None when the value is not a URL."""
+        try:
+            return urlparse(self.xai_base_url.strip())
+        except Exception:  # noqa: BLE001 — display helper only
+            return None
+
     def endpoint_host(self) -> str:
         """Hostname of XAI_BASE_URL (empty string if unparseable)."""
-        try:
-            return (urlparse(self.xai_base_url.strip()).hostname or "").lower()
-        except Exception:  # noqa: BLE001 — display helper only
+        parsed = self.parsed_base_url()
+        if parsed is None:
             return ""
+        return (parsed.hostname or "").lower()
 
     def uses_trusted_xai_host(self) -> bool:
-        """True when base URL points at the known xAI API host."""
-        host = self.endpoint_host()
-        return host in _TRUSTED_XAI_HOSTS
+        """True only for https://api.x.ai on port 443, with no userinfo.
+
+        Hostname alone is not enough: ``http://`` would skip TLS, and a
+        non-default port or ``user:pass@`` can steer the key off the real API
+        while still looking like the official host.
+        """
+        parsed = self.parsed_base_url()
+        if parsed is None:
+            return False
+        if (parsed.scheme or "").lower() != "https":
+            return False
+        if parsed.username or parsed.password:
+            return False
+        host = (parsed.hostname or "").lower()
+        if host not in _TRUSTED_XAI_HOSTS:
+            return False
+        # None means the scheme default (443 for https).
+        return parsed.port in (None, 443)
 
 
 def get_settings() -> Settings:
