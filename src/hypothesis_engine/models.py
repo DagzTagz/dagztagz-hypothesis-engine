@@ -42,6 +42,27 @@ class CheckStatus(StrEnum):
     UNCLEAR = "unclear"
 
 
+class Retrieval(StrEnum):
+    """Retrieval outcome, written to meta.retrieval_status.
+
+    The values are a public contract: downstream tools (vesper-bind) match
+    these exact strings, so never rename one.
+    """
+
+    OFF = "skipped"
+    EMPTY = "empty"
+    OK = "ok"
+    MOCK_FILLED = "ok_mock"
+
+
+class Grounding(StrEnum):
+    """What the background brief rests on (BackgroundBrief.grounding)."""
+
+    MODEL_ONLY = "model_only"
+    RETRIEVED = "retrieved"
+    MIXED = "mixed"
+
+
 class RetrievedPassage(BaseModel):
     """One chunk from local (or mock) retrieval for RAG v0."""
 
@@ -72,8 +93,8 @@ class BackgroundBrief(BaseModel):
         default_factory=list,
         description="Retrieved local passages when --retrieve is used",
     )
-    grounding: str = Field(
-        default="model_only",
+    grounding: Grounding = Field(
+        default=Grounding.MODEL_ONLY,
         description="model_only | retrieved | mixed",
     )
 

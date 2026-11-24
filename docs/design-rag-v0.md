@@ -54,8 +54,26 @@ If `--retrieve` is set with **no** `--corpus` / `--source`: **error** (except dr
 
 - `RetrievedPassage`: id, title, identifier (path), snippet, year (optional/null), backend=`local`|`mock`, score  
 - `BackgroundBrief.sources`, `BackgroundBrief.grounding` = `model_only` | `retrieved` | `mixed`  
-- `meta.retrieval` = `off` | `rag_v0_local`  
+- `meta.retrieval` = `off` | `rag_v0_1_local`  
 - `meta.retrieval_backend`, `meta.retrieval_status`, `meta.n_passages`
+
+### Retrieval states (stable contract)
+
+`models.Retrieval` is the one source of the retrieval fields. Live and dry-run
+runs both build them with `workflow.retrieval_meta(state, passages, warnings)`.
+Downstream tools such as vesper-bind may match these strings, so the values
+never change:
+
+| `Retrieval` | `retrieval_status` | `retrieval` | `retrieval_backend` | `background_mode` | `n_passages` |
+|---|---|---|---|---|---|
+| `OFF` | `skipped` | `off` | `none` | `model_knowledge_only` | 0 |
+| `EMPTY` | `empty` | `rag_v0_1_local` | `local` | `local_retrieval_empty` | 0 |
+| `OK` | `ok` | `rag_v0_1_local` | `local` | `local_retrieval+model` | ≥1 |
+| `MOCK_FILLED` (dry-run only) | `ok_mock` | `rag_v0_1_local` | `mock` | `local_retrieval+model` | ≥1 |
+
+`BackgroundBrief.grounding` is the `models.Grounding` enum (`model_only`,
+`retrieved`, `mixed`). Without passages it is always `model_only`; with
+passages, a model claim other than `retrieved` becomes `mixed`.
 
 ## Retrieval algorithm (v0 — intentionally simple)
 
