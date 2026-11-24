@@ -248,7 +248,8 @@ source .venv/bin/activate
 hypothesis-engine --dry-run "my topic" --audit-log audit.jsonl
 ```
 
-What you get in `audit.jsonl`: events like `start` / `complete` with `topic_sha256` (one-way fingerprint).  
+What you get in `audit.jsonl`: events like `start` / `complete` with `topic_sha256` (one-way fingerprint).
+Every `start` is followed by exactly one ending: `complete`, `error`, `output_failed` (the `-o` file could not be written) or `interrupted` (Ctrl-C).  
 You **cannot** turn that hash back into the original words.
 
 ### Mode B — Encrypted topic (optional extra install)

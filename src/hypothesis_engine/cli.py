@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 
 from rich.console import Console
@@ -243,6 +244,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             err.print(f"[cyan]…[/cyan] {safe}")
 
+    # Exactly one terminal event follows "start" (audit F6): complete, error,
+    # output_failed or interrupted. The finally block is the only writer.
+    outcome = Outcome.ERROR
+    extra: dict = {}
     try:
         bundle = run_workflow(
             topic,
@@ -255,50 +260,44 @@ def main(argv: list[str] | None = None) -> int:
             retrieve_k=retrieve_k,
             retrieve_full_paths=retrieve_full_paths,
         )
+        if not dry_run:
+            err.print("[green]Done waiting — printing results below.[/green]")
+        payload = bundle_to_json(bundle)
+        try:
+            if args.output:
+                _write_private_text(args.output, payload + "\n")
+        except OutputPathError as exc:
+            _print_error(err, exc)
+            outcome = Outcome.OUTPUT_FAILED
+            extra = {"error_type": type(exc).__name__, "error": str(exc)}
+        else:
+            outcome = Outcome.COMPLETE
+            extra = {
+                "n_hypotheses": n,
+                "hypothesis_ids": [h.id for h in bundle.hypotheses],
+                "output": str(args.output) if args.output else None,
+                "n_passages": int(bundle.meta.get("n_passages") or 0),
+            }
+    except KeyboardInterrupt:
+        outcome = Outcome.INTERRUPTED
+        raise
     except Exception as exc:  # noqa: BLE001 — CLI boundary
         message = _friendly_error(exc)
-        err.print(f"[red]Error:[/red] {message}")
-        if _audit_checked(
+        _print_error(err, message)
+        extra = {"error_type": type(exc).__name__, "error": message}
+    finally:
+        audit_failed = _audit_checked(
             err,
             args.audit_log,
             {
-                "event": "error",
+                "event": outcome.value,
                 "dry_run": dry_run,
-                "error_type": type(exc).__name__,
-                "error": message,
+                **extra,
                 "retrieve": retrieve,
                 **topic_fields,
             },
-        ):
-            return 1
-        return 1
-    else:
-        if not dry_run:
-            err.print("[green]Done waiting — printing results below.[/green]")
-
-    payload = bundle_to_json(bundle)
-    if args.output:
-        try:
-            _write_private_text(args.output, payload + "\n")
-        except OutputPathError as exc:
-            _print_error(err, exc)
-            return 1
-
-    n_passages = int(bundle.meta.get("n_passages") or 0)
-    if _audit_checked(
-        err,
-        args.audit_log,
-        {
-            "event": "complete",
-            "dry_run": dry_run,
-            "n_hypotheses": n,
-            "hypothesis_ids": [h.id for h in bundle.hypotheses],
-            "output": str(args.output) if args.output else None,
-            "retrieve": retrieve,
-            "n_passages": n_passages,
-            **topic_fields,
-        },
-    ):
+        )
+    if outcome is not Outcome.COMPLETE or audit_failed:
         return 1
 
     if args.json_only:
@@ -618,6 +617,15 @@ def _audit(path: Path | None, event: dict) -> None:
     fd = _open_private(path, append=True)
     with os.fdopen(fd, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+class Outcome(StrEnum):
+    """Terminal audit event for a run that logged "start" (audit F6)."""
+
+    COMPLETE = "complete"
+    ERROR = "error"
+    OUTPUT_FAILED = "output_failed"
+    INTERRUPTED = "interrupted"
 
 
 def _print_error(console: Console, exc: object) -> None:

@@ -148,6 +148,9 @@ def run_workflow(
     _tick("Generating hypotheses (please wait; do not type)…")
     hypotheses = _step_generate(client, model, topic, background, n_hypotheses)
     _progress(f"Generated {len(hypotheses)} hypothesis(es).")
+    # _step_generate can drop unusable rows; count the steps that will run
+    # (audit F6), not the n that was asked for.
+    total = estimate_api_calls(len(hypotheses))
 
     verifications: list[VerificationResult] = []
     tests: list[SuggestedTest] = []
