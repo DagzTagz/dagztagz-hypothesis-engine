@@ -17,8 +17,10 @@ from hypothesis_engine.models import (
     CheckResult,
     CheckStatus,
     Confidence,
+    Grounding,
     Hypothesis,
     HypothesisBundle,
+    Retrieval,
     RetrievedPassage,
     SuggestedTest,
     Verdict,
@@ -123,7 +125,7 @@ def run_workflow(
         _progress(f"[{step}/{total}] {label}")
 
     passages: list[RetrievedPassage] = []
-    retrieval_status = "skipped"
+    retrieval_state = Retrieval.OFF
     retrieval_warnings: list[str] = []
     if retrieve:
         _progress("Local retrieval: scoring your files (no remote search)…")
@@ -138,7 +140,7 @@ def run_workflow(
         retrieval_warnings = list(result.warnings)
         for warn in retrieval_warnings:
             _progress(f"Warning: {warn}")
-        retrieval_status = "ok" if passages else "empty"
+        retrieval_state = Retrieval.OK if passages else Retrieval.EMPTY
         _progress(f"Local retrieval done ({len(passages)} passage(s)).")
 
     _tick("Calling xAI for background brief (this can take a while)…")
@@ -148,6 +150,9 @@ def run_workflow(
     _tick("Generating hypotheses (please wait; do not type)…")
     hypotheses = _step_generate(client, model, topic, background, n_hypotheses)
     _progress(f"Generated {len(hypotheses)} hypothesis(es).")
+    # _step_generate can drop unusable rows; count the steps that will run
+    # (audit F6), not the n that was asked for.
+    total = estimate_api_calls(len(hypotheses))
 
     verifications: list[VerificationResult] = []
     tests: list[SuggestedTest] = []
@@ -165,27 +170,15 @@ def run_workflow(
 
     _progress("All API steps finished. Assembling report…")
     overall = _overall_notes(hypotheses, verifications)
-    bg_mode = (
-        "local_retrieval+model"
-        if retrieve and passages
-        else ("local_retrieval_empty" if retrieve else "model_knowledge_only")
-    )
     meta: dict = {
         "phase": 2,
         "engine_version": __version__,
         "model": model,
         "n_hypotheses": n_hypotheses,
-        "background_mode": bg_mode,
         "verification": VERIFICATION_SCHEMA,
         "tests": TESTS_SCHEMA,
-        "retrieval": RETRIEVAL_SCHEMA if retrieve else "off",
-        "retrieval_backend": "local" if retrieve else "none",
-        "retrieval_status": retrieval_status if retrieve else "skipped",
-        "n_passages": len(passages) if retrieve else 0,
+        **retrieval_meta(retrieval_state, passages, retrieval_warnings),
     }
-    if retrieve and retrieval_warnings:
-        # Filenames only in warnings — no home-directory paths.
-        meta["retrieval_warnings"] = retrieval_warnings[:20]
     return HypothesisBundle(
         topic=topic,
         background=background,
@@ -246,11 +239,12 @@ def _normalize_background(
     if passages:
         # Prefer engine-side sources of truth (paths the user supplied).
         data["sources"] = [p.model_dump(mode="json") for p in passages]
-        grounding = str(data.get("grounding") or "mixed").strip().lower()
-        if grounding not in {"model_only", "retrieved", "mixed"}:
-            grounding = "mixed"
-        # Empty model claim of retrieved-only is ok; empty passages → model_only
-        data["grounding"] = grounding if grounding != "model_only" else "mixed"
+        claimed = str(data.get("grounding") or "").strip().lower()
+        # With passages present the brief is never model-only; an unknown
+        # or model-only claim becomes MIXED.
+        data["grounding"] = (
+            Grounding.RETRIEVED if claimed == Grounding.RETRIEVED else Grounding.MIXED
+        )
         lim = data.get("known_limitations")
         if isinstance(lim, list):
             note = (
@@ -262,7 +256,7 @@ def _normalize_background(
             data["known_limitations"] = lim
     else:
         data["sources"] = []
-        data["grounding"] = "model_only"
+        data["grounding"] = Grounding.MODEL_ONLY
     # Same soft caps as verify/tests. A runaway background reply is still
     # model output and should not land unbounded in -o / the terminal.
     for key in ("key_concepts", "known_limitations", "caveats"):
@@ -696,7 +690,7 @@ def _mock_bundle(
 ) -> HypothesisBundle:
     """Deterministic offline output for demos and tests (no network)."""
     passages: list[RetrievedPassage] = []
-    retrieval_status = "skipped"
+    retrieval_state = Retrieval.OFF
     retrieval_warnings: list[str] = []
     if retrieve:
         result = retrieve_local(
@@ -711,16 +705,16 @@ def _mock_bundle(
         if not passages:
             # Demo fill only — not a real local hit (see meta.retrieval_status).
             passages = mock_passages(topic, k=min(2, retrieve_k))
-            retrieval_status = "ok_mock"
+            retrieval_state = Retrieval.MOCK_FILLED
         else:
-            retrieval_status = "ok"
+            retrieval_state = Retrieval.OK
 
     if passages:
         summary = (
             f"Mock background for '{topic}' grounded on {len(passages)} local "
             "passage(s) (dry-run). Not a literature search."
         )
-        grounding = "mixed"
+        grounding = Grounding.MIXED
         limitations = [
             "dry-run mode; no LLM call",
             "local-file retrieval only (RAG v0); not a full literature review",
@@ -730,7 +724,7 @@ def _mock_bundle(
             f"Mock background for '{topic}'. In live mode this would be a short "
             "model-knowledge briefing, not a literature review."
         )
-        grounding = "model_only"
+        grounding = Grounding.MODEL_ONLY
         limitations = ["dry-run mode; no LLM call"]
 
     background = BackgroundBrief(
@@ -784,32 +778,45 @@ def _mock_bundle(
             "n_hypotheses": n,
             "verification": VERIFICATION_SCHEMA,
             "tests": TESTS_SCHEMA,
-            "retrieval": RETRIEVAL_SCHEMA if retrieve else "off",
-            "retrieval_backend": _retrieval_backend_label(retrieve, passages),
-            "retrieval_status": retrieval_status if retrieve else "skipped",
-            "n_passages": len(passages) if retrieve else 0,
-            "background_mode": (
-                "local_retrieval+model" if retrieve and passages else "model_knowledge_only"
-            ),
-            **(
-                {"retrieval_warnings": retrieval_warnings[:20]}
-                if retrieve and retrieval_warnings
-                else {}
-            ),
+            **retrieval_meta(retrieval_state, passages, retrieval_warnings),
         },
     )
 
 
-def _retrieval_backend_label(
-    retrieve: bool, passages: list[RetrievedPassage]
-) -> str:
-    if not retrieve:
-        return "none"
-    if any(p.backend == "local" for p in passages):
-        return "local"
-    if any(p.backend == "mock" for p in passages):
-        return "mock"
-    return "local"
+def retrieval_meta(
+    state: Retrieval,
+    passages: list[RetrievedPassage],
+    warnings: list[str],
+) -> dict:
+    """Every retrieval field in meta, derived from one state (audit F10).
+
+    Live and dry-run both call this, so they cannot drift apart. Each state
+    fixes the other fields: OFF has no passages, EMPTY has none by
+    definition, and only MOCK_FILLED reports the mock backend.
+    """
+    if state is Retrieval.OFF:
+        return {
+            "retrieval": "off",
+            "retrieval_backend": "none",
+            "retrieval_status": state.value,
+            "n_passages": 0,
+            "background_mode": "model_knowledge_only",
+        }
+    if state is Retrieval.EMPTY:
+        passages = []
+    meta: dict = {
+        "retrieval": RETRIEVAL_SCHEMA,
+        "retrieval_backend": "mock" if state is Retrieval.MOCK_FILLED else "local",
+        "retrieval_status": state.value,
+        "n_passages": len(passages),
+        "background_mode": (
+            "local_retrieval_empty" if state is Retrieval.EMPTY else "local_retrieval+model"
+        ),
+    }
+    if warnings:
+        # Filenames only in warnings — no home-directory paths.
+        meta["retrieval_warnings"] = warnings[:20]
+    return meta
 
 
 def bundle_to_json(bundle: HypothesisBundle, *, indent: int = 2) -> str:

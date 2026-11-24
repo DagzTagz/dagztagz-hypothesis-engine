@@ -252,3 +252,30 @@ def test_cli_rejects_n_out_of_range():
     with pytest.raises(SystemExit) as exc:
         main(["--dry-run", "--json-only", "-n", "9", "bad n"])
     assert exc.value.code == 2
+
+
+def test_error_lines_render_the_red_label(tmp_path: Path, capsys):
+    """The error label is markup, not literal "[red]" text (side bug, cli.py)."""
+    link = tmp_path / "out.json"
+    link.symlink_to(tmp_path / "elsewhere.json")
+    code = main(["--dry-run", "--json-only", "-n", "1", "-o", str(link), "label topic"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err
+    assert "[red]" not in err and "[/red]" not in err
+
+
+def test_error_message_keeps_bracketed_text(monkeypatch, capsys):
+    """Escaping keeps a pip extra like [audit] in the printed message."""
+    from hypothesis_engine import cli
+    from hypothesis_engine.audit import AuditEncryptionUnavailable
+
+    def boom(*args, **kwargs):
+        raise AuditEncryptionUnavailable("pip install 'x[audit]'")
+
+    monkeypatch.setattr(cli, "topic_audit_fields", boom)
+    code = main(["--dry-run", "--json-only", "-n", "1", "extra topic"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "x[audit]" in err
+    assert "[red]" not in err

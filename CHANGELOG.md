@@ -9,6 +9,23 @@ Versions follow [Semantic Versioning](https://semver.org/) while pre-1.0 (`0.x` 
 
 ---
 
+## [Unreleased] — state-machine audit fixes
+
+Findings F6 and F10 from the November 2026 state-machine audit. The disclosure is in [docs/security/state-machine-audit-2026-11.md](docs/security/state-machine-audit-2026-11.md).
+
+### Fixed
+
+- **Audit log endings (F6):** every `start` event is now followed by exactly one terminal event: `complete`, `error`, `output_failed` or `interrupted`. Before this, an unwritable `-o` or a Ctrl-C left `start` alone in the log.
+- **Progress counter (F6):** the `[k/N]` total is recomputed after generation, so it reaches `N/N` when the model drops a hypothesis.
+- **Error label:** error lines render the red `Error:` label instead of printing `[red]Error:[/red]` as text. Bracketed text such as `[audit]` is still printed.
+
+### Changed
+
+- **Retrieval states (F10):** `models.Retrieval` and `models.Grounding` are StrEnums. `workflow.retrieval_meta()` builds every retrieval field in `meta` for both live and dry-run runs. The JSON values are unchanged and are now a documented contract.
+- **New audit event names:** `output_failed` and `interrupted`. If you parse `audit.jsonl`, accept them.
+
+---
+
 ## [0.3.2] — 2026-09-25 — security fixes from review
 
 Patch on the 0.3 line. No new science features. Live mode, local retrieval, and audit logs behave more tightly.
