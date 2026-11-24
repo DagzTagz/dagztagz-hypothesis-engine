@@ -183,8 +183,7 @@ def main(argv: list[str] | None = None) -> int:
             include_plaintext=args.audit_include_topic,
         )
     except AuditEncryptionUnavailable as exc:
-        # markup=False so pip extra names like [audit] are not eaten by Rich
-        err.print(f"[red]Error:[/red] {exc}", markup=False)
+        _print_error(err, exc)
         return 1
 
     if not dry_run:
@@ -282,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             _write_private_text(args.output, payload + "\n")
         except OutputPathError as exc:
-            err.print(f"[red]Error:[/red] {exc}", markup=False)
+            _print_error(err, exc)
             return 1
 
     n_passages = int(bundle.meta.get("n_passages") or 0)
@@ -621,12 +620,20 @@ def _audit(path: Path | None, event: dict) -> None:
         fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
+def _print_error(console: Console, exc: object) -> None:
+    """Red "Error:" label, message escaped so text like [audit] prints as is.
+
+    markup=False on the whole line printed the [red]...[/red] tags literally.
+    """
+    console.print(f"[red]Error:[/red] {escape(str(exc))}")
+
+
 def _audit_checked(console: Console, path: Path | None, event: dict) -> bool:
     """Append one audit event. Return True when the caller should exit 1."""
     try:
         _audit(path, event)
     except OutputPathError as exc:
-        console.print(f"[red]Error:[/red] {exc}", markup=False)
+        _print_error(console, exc)
         return True
     return False
 
