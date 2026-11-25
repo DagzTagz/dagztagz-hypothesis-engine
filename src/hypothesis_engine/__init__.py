@@ -1,3 +1,3 @@
 """DagzTagz Hypothesis Engine — iterative open source. Powered by Grok (xAI)."""
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"

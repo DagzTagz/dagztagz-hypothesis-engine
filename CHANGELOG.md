@@ -9,7 +9,14 @@ Versions follow [Semantic Versioning](https://semver.org/) while pre-1.0 (`0.x` 
 
 ---
 
-## [Unreleased] — state-machine audit fixes
+## [Unreleased]
+
+---
+
+## [0.4.0] - 2026-11-25 - state-machine audit fixes
+
+The package version 0.3.2 was in this tree from 2026-09-25 but was never tagged. The last tag was v0.3.1. This release includes that 0.3.2 work plus the November 2026 state-machine audit fixes (F6 and F10).
+
 
 Findings F6 and F10 from the November 2026 state-machine audit. The disclosure is in [docs/security/state-machine-audit-2026-11.md](docs/security/state-machine-audit-2026-11.md).
 
