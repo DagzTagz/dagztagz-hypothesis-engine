@@ -163,7 +163,7 @@ def test_cli_version_and_engine_meta(capsys):
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["meta"]["engine_version"] == __version__
-    assert __version__ == "0.3.2"
+    assert __version__ == "0.4.0"
 
 
 def test_yes_refuses_untrusted_endpoint(monkeypatch, capsys):

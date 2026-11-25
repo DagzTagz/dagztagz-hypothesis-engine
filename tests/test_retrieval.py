@@ -147,7 +147,7 @@ def test_cli_dry_run_retrieve_json(tmp_path: Path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["meta"]["retrieval"] == RETRIEVAL_SCHEMA
     assert data["background"]["sources"]
-    assert data["meta"]["engine_version"] == "0.3.2"
+    assert data["meta"]["engine_version"] == "0.4.0"
 
 
 def test_chunk_text_splits_long_docs():
